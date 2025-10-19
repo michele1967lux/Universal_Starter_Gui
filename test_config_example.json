@@ -1,0 +1,21 @@
+{
+  "environment": {
+    "type": "venv",
+    "name": "my_project_env",
+    "path": "/home/user/projects/UNIVERSAL-STARTER-GUI/.venvs/my_project_env"
+  },
+  "files": [
+    {
+      "name": "api_server.py",
+      "path": "/home/user/projects/my_app/api_server.py"
+    },
+    {
+      "name": "background_worker.py",
+      "path": "/home/user/projects/my_app/background_worker.py"
+    },
+    {
+      "name": "data_processor.py",
+      "path": "/home/user/projects/my_app/data_processor.py"
+    }
+  ]
+}
