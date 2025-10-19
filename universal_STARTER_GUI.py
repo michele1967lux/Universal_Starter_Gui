@@ -892,6 +892,178 @@ class EnvManagerWindow(ctk.CTkToplevel):
         self.destroy()
 
 
+class GitManager:
+    """
+    Gestisce tutte le operazioni Git, separando la logica dalla GUI.
+    """
+    def __init__(self, repo_path: str):
+        self.repo_path = repo_path
+
+    def _run_git_command(self, command: List[str]) -> Tuple[int, str, str]:
+        """Esegue un comando git e restituisce (return_code, stdout, stderr)."""
+        try:
+            process = subprocess.run(
+                ["git"] + command,
+                capture_output=True,
+                text=True,
+                cwd=self.repo_path,
+                encoding='utf-8',
+                errors='ignore'
+            )
+            return process.returncode, process.stdout.strip(), process.stderr.strip()
+        except FileNotFoundError:
+            return -1, "", "Git non trovato. Assicurarsi che sia installato e nel PATH."
+        except Exception as e:
+            return -1, "", f"Errore imprevisto: {e}"
+
+    def is_git_repo(self) -> bool:
+        """Verifica se il percorso è un repository Git valido."""
+        return_code, _, _ = self._run_git_command(["rev-parse", "--is-inside-work-tree"])
+        return return_code == 0
+
+    def get_current_branch(self) -> Optional[str]:
+        """Restituisce il nome del branch corrente."""
+        ret, out, err = self._run_git_command(["branch", "--show-current"])
+        return out if ret == 0 and out else "HEAD detached"
+
+    def get_status(self) -> List[Dict[str, str]]:
+        """Ottiene lo stato dei file (staged, unstaged, untracked)."""
+        ret, out, err = self._run_git_command(["status", "--porcelain"])
+        if ret != 0:
+            return []
+
+        files = []
+        for line in out.split('\n'):
+            if not line:
+                continue
+            status_code = line[:2]
+            path = line[3:]
+
+            staged_status = status_code[0]
+            unstaged_status = status_code[1]
+
+            file_info = {'path': path, 'staged': 'none', 'unstaged': 'none'}
+
+            # Staged changes
+            if staged_status == 'M': file_info['staged'] = 'Modified'
+            elif staged_status == 'A': file_info['staged'] = 'Added'
+            elif staged_status == 'D': file_info['staged'] = 'Deleted'
+            elif staged_status == 'R': file_info['staged'] = 'Renamed'
+
+            # Unstaged changes
+            if unstaged_status == 'M': file_info['unstaged'] = 'Modified'
+            elif unstaged_status == 'D': file_info['unstaged'] = 'Deleted'
+            elif unstaged_status == '??': file_info['unstaged'] = 'Untracked'
+
+            files.append(file_info)
+        return files
+
+    def get_commit_graph_data(self, max_commits=50) -> Tuple[List[Dict], Dict]:
+        """
+        Genera i dati per la visualizzazione del grafo dei commit.
+        Implementa un algoritmo di layout per posizionare i commit in colonne.
+        """
+        # 1. Ottieni i dati grezzi dal log di git
+        fmt = "%H|%P|%an|%s" # Hash|ParentHashes|Author|Subject
+        ret, out, err = self._run_git_command(["log", "--all", f"--max-count={max_commits}", f"--pretty=format:{fmt}"])
+        if ret != 0:
+            return [], {}
+
+        # 2. Costruisci una mappa dei nodi e identifica i figli di ogni commit
+        nodes = {}
+        all_children = {}
+        lines = out.split('\n')
+        for i, line in enumerate(lines):
+            if not line: continue
+            parts = line.split('|', 3)
+            h, p, author, msg = parts
+            parents = p.split()
+            nodes[h] = {'y': i, 'parents': parents, 'hash': h, 'msg': msg, 'author': author, 'children': []}
+            for parent_hash in parents:
+                if parent_hash not in all_children:
+                    all_children[parent_hash] = []
+                all_children[parent_hash].append(h)
+
+        for h, node in nodes.items():
+            if h in all_children:
+                node['children'] = all_children[h]
+
+        # 3. Algoritmo di layout per assegnare le colonne (coordinate x)
+        columns = {}
+        lane_allocator = [None] * 20  # Supporta fino a 20 branch paralleli
+
+        def find_free_lane(start_y):
+            for i, last_y in enumerate(lane_allocator):
+                if last_y is None or last_y > start_y:
+                    return i
+            return len(lane_allocator) # Fallback
+
+        sorted_nodes = sorted(nodes.values(), key=lambda n: n['y'])
+
+        for node in sorted_nodes:
+            h = node['hash']
+            y = node['y']
+
+            if h in columns: # Già processato come parente
+                continue
+
+            # Se un figlio ha già una colonna, prova a ereditarla
+            parent_of_lane = None
+            for child_hash in node.get('children', []):
+                if child_hash in columns:
+                    child_col = columns[child_hash]
+                    # Se il figlio è il primo del suo branch, eredita la colonna
+                    if lane_allocator[child_col] == nodes[child_hash]['y']:
+                        parent_of_lane = child_col
+                        break
+
+            if parent_of_lane is not None:
+                col = parent_of_lane
+            else:
+                col = find_free_lane(y)
+
+            columns[h] = col
+            lane_allocator[col] = y
+
+        # 4. Assegna le coordinate finali
+        commit_list = []
+        for h, node in nodes.items():
+            node['x'] = columns.get(h, 0) * 40 + 30 # 40px per colonna, 30px di offset
+            node['y'] = node['y'] * 70 + 40 # 70px per riga, 40px di offset
+            commit_list.append(node)
+
+        return commit_list, nodes
+
+    # Funzioni di azione (stage, commit, push, etc.)
+    def stage(self, files: List[str]) -> Tuple[bool, str]:
+        ret, out, err = self._run_git_command(["add"] + files)
+        return ret == 0, err
+
+    def unstage(self, files: List[str]) -> Tuple[bool, str]:
+        ret, out, err = self._run_git_command(["reset", "HEAD", "--"] + files)
+        return ret == 0, err
+
+    def commit(self, message: str) -> Tuple[bool, str]:
+        ret, out, err = self._run_git_command(["commit", "-m", message])
+        return ret == 0, out if ret == 0 else err
+
+    def push(self) -> Tuple[bool, str]:
+        ret, out, err = self._run_git_command(["push"])
+        return ret == 0, out if ret == 0 else err
+
+    def checkout(self, target: str) -> Tuple[bool, str]:
+        ret, out, err = self._run_git_command(["checkout", target])
+        return ret == 0, out if ret == 0 else err
+
+    def create_branch(self, branch_name: str, from_commit: str) -> Tuple[bool, str]:
+        ret, out, err = self._run_git_command(["branch", branch_name, from_commit])
+        return ret == 0, out if ret == 0 else err
+
+    def cherry_pick(self, commit_hash: str) -> Tuple[bool, str]:
+        ret, out, err = self._run_git_command(["cherry-pick", commit_hash])
+        return ret == 0, out if ret == 0 else err
+
+
 class App(ctk.CTk):
     """Main application window."""
     
@@ -910,7 +1082,10 @@ class App(ctk.CTk):
         self.files = []  # List of {"name": str, "path": str, "process": subprocess.Popen, "status": str}
         self.config_file = "config_STARTER_GUI.json"
         self.current_tab = None  # Track current tab for change detection
-        
+
+        # NUOVA RIGA: Inizializza il GitManager
+        self.git_manager = GitManager(os.getcwd())
+
         # Setup GUI
         self.setup_gui()
 
@@ -1073,6 +1248,71 @@ class App(ctk.CTk):
         self.create_tooltip(self.resume_btn, "Riprendi un'operazione interrotta (merge/rebase).")
         self.create_tooltip(self.stage_selected_btn, "Aggiungi i file selezionati all'area di staging.")
         self.create_tooltip(self.unstage_selected_btn, "Rimuovi i file selezionati dall'area di staging.")
+
+        # ==================================================
+        # NUOVA SEZIONE: Tab Help
+        # ==================================================
+        self.tabview.add("Help")
+        help_tab = self.tabview.tab("Help")
+
+        help_frame = ctk.CTkScrollableFrame(help_tab)
+        help_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        help_text = """
+Benvenuto in Universal Starter GUI!
+Questa applicazione ti aiuta a gestire e lanciare i tuoi script,
+con un supporto integrato per ambienti virtuali Python e Git.
+
+--- Sezione Main ---
+
+Ambiente Attivo:
+Mostra l'ambiente Python (Venv/Conda) attualmente selezionato.
+• Gestisci Ambienti: Apre una finestra per creare, eliminare, clonare e selezionare ambienti Venv o Conda.
+• Installa Dipendenze: Installa le librerie da un file `requirements.txt` nell'ambiente attivo.
+• Verifica Librerie: Mostra un elenco di tutte le librerie installate nell'ambiente attivo.
+• Editor Requirements: Apre un semplice editor di testo per creare o modificare file `requirements.txt`.
+• Test CUDA/PyTorch: Esegue un test per verificare se PyTorch è installato e se rileva correttamente la GPU (CUDA).
+• Processi Localhost: Mostra i processi attivi sulla tua macchina che sono in ascolto su porte locali (es. web server).
+
+File da Avviare:
+Elenco degli script che vuoi gestire.
+• ➕ Aggiungi File: Seleziona uno script Python (.py) o un eseguibile da aggiungere alla lista.
+• ▶ (Avvia): Esegue lo script selezionato. L'output verrà mostrato nella console "Log Output".
+• ⏹ (Ferma): Termina il processo dello script.
+• 🗑 (Rimuovi): Rimuove lo script dalla lista.
+• Lancia in nuova shell: Se spuntato, gli script verranno eseguiti in una nuova finestra del terminale anziché all'interno dell'app.
+
+Controlli Globali:
+• Avvia Tutti / Ferma Tutti: Esegue o termina tutti gli script nella lista.
+• Salva Configurazione: Salva l'ambiente attivo e la lista di file nel file `config_STARTER_GUI.json` per caricarli al prossimo avvio.
+
+--- Sezione Git Status ---
+
+Questa sezione fornisce un'interfaccia visuale per il tuo repository Git.
+
+Grafico dei Branch:
+• Visualizzazione ad Albero: Mostra la storia dei commit come un grafo. Ogni colonna verticale rappresenta una linea di sviluppo (branch).
+• Commit Cliccabili: Clicca su un commit (il cerchio colorato) per aprire un menu con azioni rapide:
+  - Checkout: Spostati a quel commit (entrerai in stato "detached HEAD").
+  - Crea branch da...: Crea un nuovo branch a partire da quel commit.
+  - Cherry-pick: Applica le modifiche di quel commit sul tuo branch attuale.
+  - Copia Hash: Copia l'hash completo del commit negli appunti.
+
+Stato dei File:
+Mostra i file che sono stati modificati, aggiunti o eliminati.
+• Seleziona i file usando le checkbox a sinistra.
+• Stage Selezionati: Aggiunge i file selezionati all'area di staging, pronti per il prossimo commit.
+• Unstage Selezionati: Rimuove i file selezionati dall'area di staging.
+
+Azioni Git:
+• Commit: Crea un nuovo salvataggio (commit) con i file che hai messo in "stage". Ti chiederà un messaggio di commit.
+• Push: Invia i tuoi commit locali al repository remoto (es. GitHub).
+"""
+
+        help_label = ctk.CTkLabel(help_frame, text=help_text, justify="left", anchor="w")
+        help_label.pack(padx=10, pady=10, fill="x")
+
+# Fine della funzione setup_gui
 
         # Inizializza status git
         self.refresh_git_status()
@@ -1703,105 +1943,54 @@ except Exception as e:
             print(f"Error loading config: {e}")
 
     def refresh_git_status(self):
-        """Refresh the git status display."""
-        # Clear existing widgets
+        """Refresh the git status display using GitManager."""
+        # Clear existing file widgets
         for widget in self.git_files_frame.winfo_children():
             widget.destroy()
         self.git_file_checkboxes = []
-        print("Cleared git_files_frame")
 
-        # Get current branch
-        try:
-            result = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True, cwd=os.getcwd())
-            print(f"Git branch result: {result.returncode}, stdout: '{result.stdout.strip()}', stderr: '{result.stderr.strip()}'")
-            if result.returncode == 0:
-                branch = result.stdout.strip()
-                self.git_branch_label.configure(text=f"Branch: {branch}")
-            else:
-                self.git_branch_label.configure(text="Branch: N/A (non git repo)")
-        except FileNotFoundError:
-            self.git_branch_label.configure(text="Branch: N/A (git non trovato)")
-
-        # Get git status
-        try:
-            result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, cwd=os.getcwd())
-            print(f"Git status output: '{result.stdout.strip()}'")
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                print(f"Parsed {len(lines)} status lines")
-                if lines == ['']:
-                    # No changes
-                    label = ctk.CTkLabel(self.git_files_frame, text="Nessun file modificato")
-                    label.pack(pady=5)
-                else:
-                    file_count = 0
-                    for line in lines:
-                        if line:
-                            status = line[:2]
-                            file_path = line[3:]
-                            # Determine color and text
-                            if status[0] in ['M', 'A', 'D', 'R'] or status[1] in ['M', 'A', 'D', 'R']:
-                                color = "green" if status[0] != ' ' else "red"
-                                status_text = "Staged" if status[0] != ' ' else "Modified"
-                            elif status[0] == '?':
-                                color = "yellow"
-                                status_text = "Untracked"
-                            else:
-                                color = "gray"
-                                status_text = "Ignored"
-
-                            frame = ctk.CTkFrame(self.git_files_frame)
-                            frame.pack(pady=2, padx=5, fill="x")
-                            # Checkbox for staging
-                            checkbox = ctk.CTkCheckBox(frame, text="", width=20)
-                            checkbox.pack(side="left", padx=5)
-                            self.git_file_checkboxes.append((checkbox, file_path, status))
-                            indicator = ctk.CTkLabel(frame, text="●", text_color=color, font=("Arial", 20))
-                            indicator.pack(side="left", padx=5)
-                            info = ctk.CTkLabel(frame, text=f"{file_path} ({status_text})", anchor="w")
-                            info.pack(side="left", fill="x", expand=True)
-                            file_count += 1
-                    print(f"Added {file_count} file widgets")
-            else:
-                label = ctk.CTkLabel(self.git_files_frame, text="Errore nel recupero status git")
-                label.pack(pady=5)
-        except FileNotFoundError:
-            label = ctk.CTkLabel(self.git_files_frame, text="Git non installato")
-            label.pack(pady=5)
-
-        # Check if repo has commits
-        has_commits = False
-        try:
-            count_result = subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True, text=True, cwd=os.getcwd())
-            if count_result.returncode == 0 and int(count_result.stdout.strip()) > 0:
-                has_commits = True
-            print(f"Has commits: {has_commits}, count: {count_result.stdout.strip()}")
-        except (FileNotFoundError, ValueError) as e:
-            print(f"Error checking commits: {e}")
-            pass
-
-        # Draw branch graph
-        if has_commits:
-            commits = self.parse_git_log()
-            self.draw_commit_graph(commits)
-        else:
+        if not self.git_manager.is_git_repo():
+            self.git_branch_label.configure(text="Branch: N/A (non è un repository git)")
             self.git_graph_canvas.delete("all")
-            self.git_graph_canvas.create_text(100, 100, text="Nessun commit trovato nel repository", fill="white")
-
-        # Abilita pulsanti se git disponibile
-        try:
-            subprocess.run(["git", "status"], capture_output=True, cwd=os.getcwd())
-            self.commit_btn.configure(state="normal")
-            self.push_btn.configure(state="normal")
-            self.merge_btn.configure(state="normal")
-            self.revert_btn.configure(state="normal")
-            self.resume_btn.configure(state="normal")
-        except FileNotFoundError:
+            self.git_graph_canvas.create_text(200, 50, text="Nessun repository Git trovato in questa cartella.", fill="white")
+            # Disabilita i pulsanti
             self.commit_btn.configure(state="disabled")
             self.push_btn.configure(state="disabled")
-            self.merge_btn.configure(state="disabled")
-            self.revert_btn.configure(state="disabled")
-            self.resume_btn.configure(state="disabled")
+            return
+
+        # Get current branch
+        branch = self.git_manager.get_current_branch()
+        self.git_branch_label.configure(text=f"Branch: {branch}")
+
+        # Get git status
+        status_files = self.git_manager.get_status()
+        if not status_files:
+            label = ctk.CTkLabel(self.git_files_frame, text="Nessun file modificato. Working tree pulito.")
+            label.pack(pady=5)
+        else:
+            for file_info in status_files:
+                frame = ctk.CTkFrame(self.git_files_frame)
+                frame.pack(pady=2, padx=5, fill="x")
+
+                checkbox = ctk.CTkCheckBox(frame, text="", width=20)
+                checkbox.pack(side="left", padx=5)
+                self.git_file_checkboxes.append((checkbox, file_info['path']))
+
+                # Visualizza lo stato
+                staged_text = f"Staged: {file_info['staged']}" if file_info['staged'] != 'none' else ""
+                unstaged_text = f"Unstaged: {file_info['unstaged']}" if file_info['unstaged'] != 'none' else ""
+                status_text = ", ".join(filter(None, [staged_text, unstaged_text]))
+
+                info = ctk.CTkLabel(frame, text=f"{file_info['path']} ({status_text})", anchor="w")
+                info.pack(side="left", fill="x", expand=True)
+
+        # Draw commit graph
+        commits, nodes_map = self.git_manager.get_commit_graph_data()
+        self.draw_commit_graph(commits, nodes_map)
+
+        # Abilita i pulsanti
+        self.commit_btn.configure(state="normal")
+        self.push_btn.configure(state="normal")
 
     def start_git_auto_refresh(self):
         """Start automatic refresh of git status every 30 seconds."""
@@ -1842,57 +2031,69 @@ except Exception as e:
             print(f"Error parsing git log: {e}")
             return []
 
-    def draw_commit_graph(self, commits):
-        """Draw commit graph on canvas."""
+    def draw_commit_graph(self, commits: List[Dict], nodes_map: Dict):
+        """Draw commit graph on canvas based on pre-calculated layout data."""
         self.git_graph_canvas.delete("all")
-        print(f"Drawing {len(commits)} commits")
         if not commits:
-            self.git_graph_canvas.create_text(100, 100, text="Errore nel caricamento grafico", fill="white")
+            self.git_graph_canvas.create_text(200, 50, text="Nessun commit trovato.", fill="white")
             return
 
-        import textwrap
-        max_y = 0
-        for i, commit in enumerate(commits):
-            x, y = commit['x'], commit['y']
-            # Draw rectangle larger and lower
-            self.git_graph_canvas.create_rectangle(x, y, x+200, y+50, fill="lightblue", outline="white")
-            # Draw text: hash and wrapped message
-            self.git_graph_canvas.create_text(x+100, y+10, text=commit['hash'][:7], fill="black", font=("Arial", 8, "bold"))
-            wrapped_lines = textwrap.wrap(commit['msg'], width=25)
-            for j, line in enumerate(wrapped_lines[:4]):  # Max 4 lines
-                self.git_graph_canvas.create_text(x+100, y+25 + j*10, text=line, fill="black", font=("Arial", 8))
-            # Bind click
-            self.git_graph_canvas.tag_bind(f"commit_{i}", "<Button-1>", lambda e, c=commit: self.on_commit_click(c))
-            self.git_graph_canvas.addtag_withtag(f"commit_{i}", self.git_graph_canvas.create_rectangle(x, y, x+200, y+50))
-            # Draw lines to parents
+        # Colori per i diversi branch/lane
+        lane_colors = ["#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac"]
+
+        # Disegna le linee di connessione ai parent
+        for commit in commits:
             for parent_hash in commit['parents']:
-                parent_index = next((j for j, c in enumerate(commits) if c['hash'] == parent_hash), None)
-                if parent_index is not None:
-                    parent_y = commits[parent_index]['y'] + 25
-                    self.git_graph_canvas.create_line(x+100, y+50, commits[parent_index]['x']+100, parent_y, fill="white", arrow=tk.LAST)
-            max_y = max(max_y, y + 50)
+                if parent_hash in nodes_map:
+                    parent_node = nodes_map[parent_hash]
+                    self.git_graph_canvas.create_line(
+                        commit['x'], commit['y'],
+                        parent_node['x'], parent_node['y'],
+                        fill=lane_colors[parent_node.get('x', 0) // 40 % len(lane_colors)],
+                        width=2
+                    )
 
-        # Update scroll region manually
-        max_x = 250
-        scroll_max_y = max_y if commits else 200
-        self.git_graph_canvas.configure(scrollregion=(0, 0, max_x, scroll_max_y))
-        print(f"Scroll region set to: (0, 0, {max_x}, {scroll_max_y})")
+        # Disegna i nodi dei commit
+        for commit in commits:
+            x, y = commit['x'], commit['y']
+            col_index = (x - 30) // 40
+            color = lane_colors[col_index % len(lane_colors)]
+
+            # Crea un tag univoco per ogni commit
+            commit_tag = f"commit_{commit['hash']}"
+
+            # Disegna il cerchio del commit
+            self.git_graph_canvas.create_oval(x - 6, y - 6, x + 6, y + 6, fill=color, outline="white", width=2, tags=commit_tag)
+
+            # Aggiungi testo (hash e messaggio)
+            self.git_graph_canvas.create_text(x + 15, y, anchor="w", text=f"{commit['hash'][:7]} - {commit['msg']}", fill="white", tags=commit_tag)
+
+            # Rendi il commit cliccabile
+            self.git_graph_canvas.tag_bind(commit_tag, "<Button-1>", lambda e, c=commit: self.on_commit_click(c))
+
+        # Aggiorna la scrollregion in modo robusto
         self.git_graph_canvas.update_idletasks()
-        self.git_graph_canvas.yview_moveto(0.0)
-        self.git_graph_canvas.event_generate("<<Expose>>")
-        self.git_graph_canvas.update()
-        print("Canvas updated")
-        print(f"Canvas viewable: {self.git_graph_canvas.winfo_viewable()}")
-        print(f"Canvas item count: {len(self.git_graph_canvas.find_all())}")
-        self.tabview.update_idletasks()
-        self.tabview.update()
+        bbox = self.git_graph_canvas.bbox("all")
+        if bbox:
+            # Aggiungi un po' di padding
+            self.git_graph_canvas.configure(scrollregion=(bbox[0]-20, bbox[1]-20, bbox[2]+200, bbox[3]+20))
 
-    def on_commit_click(self, commit):
-        """Handle commit click."""
+    def on_commit_click(self, commit: Dict):
+        """Handle commit click with a context menu."""
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="Checkout", command=lambda: self.git_checkout_commit(commit['hash']))
-        menu.add_command(label="Revert", command=lambda: self.git_revert_commit(commit['hash']))
-        menu.add_command(label="Show Details", command=lambda: messagebox.showinfo("Commit", f"Hash: {commit['hash']}\nMsg: {commit['msg']}"))
+        commit_hash = commit['hash']
+        short_hash = commit_hash[:7]
+
+        menu.add_command(label=f"Checkout a {short_hash}", command=lambda: self.git_checkout_commit(commit_hash))
+        menu.add_command(label=f"Crea branch da {short_hash}", command=lambda: self.git_create_branch_from(commit_hash))
+        menu.add_command(label=f"Cherry-pick {short_hash}", command=lambda: self.git_cherry_pick_commit(commit_hash))
+        menu.add_separator()
+        menu.add_command(label="Copia Hash completo", command=lambda: self.clipboard_append(commit_hash))
+        menu.add_command(label="Mostra Dettagli", command=lambda: messagebox.showinfo(
+            f"Commit {short_hash}",
+            f"Hash: {commit['hash']}\nAutore: {commit['author']}\n\nMessaggio:\n{commit['msg']}"
+        ))
+
         menu.post(self.winfo_pointerx(), self.winfo_pointery())
 
     def git_checkout_commit(self, commit_hash):
@@ -1999,30 +2200,59 @@ except Exception as e:
             messagebox.showerror("Errore", str(e))
 
     def stage_selected_files(self):
-        """Stage selected files."""
-        selected = [fp for cb, fp, st in self.git_file_checkboxes if cb.get()]
+        """Stage selected files using GitManager."""
+        selected = [fp for cb, fp in self.git_file_checkboxes if cb.get()]
         if not selected:
             messagebox.showinfo("Info", "Nessun file selezionato")
             return
-        for file_path in selected:
-            try:
-                subprocess.run(["git", "add", file_path], cwd=os.getcwd(), check=True)
-            except subprocess.CalledProcessError as e:
-                messagebox.showerror("Errore", f"Errore staging {file_path}: {e}")
+
+        success, message = self.git_manager.stage(selected)
+        if not success:
+            messagebox.showerror("Errore", f"Errore durante lo staging:\n{message}")
         self.refresh_git_status()
 
     def unstage_selected_files(self):
-        """Unstage selected files."""
-        selected = [fp for cb, fp, st in self.git_file_checkboxes if cb.get()]
+        """Unstage selected files using GitManager."""
+        selected = [fp for cb, fp in self.git_file_checkboxes if cb.get()]
         if not selected:
             messagebox.showinfo("Info", "Nessun file selezionato")
             return
-        for file_path in selected:
-            try:
-                subprocess.run(["git", "reset", "HEAD", file_path], cwd=os.getcwd(), check=True)
-            except subprocess.CalledProcessError as e:
-                messagebox.showerror("Errore", f"Errore unstage {file_path}: {e}")
+
+        success, message = self.git_manager.unstage(selected)
+        if not success:
+            messagebox.showerror("Errore", f"Errore durante l'unstage:\n{message}")
         self.refresh_git_status()
+
+    def git_create_branch_from(self, commit_hash: str):
+        """Crea un nuovo branch da un commit specifico."""
+        branch_name = simpledialog.askstring("Crea Branch", "Inserisci il nome del nuovo branch:")
+        if not branch_name:
+            return
+
+        success, message = self.git_manager.create_branch(branch_name, commit_hash)
+        if success:
+            messagebox.showinfo("Successo", f"Branch '{branch_name}' creato con successo.")
+            self.refresh_git_status()
+        else:
+            messagebox.showerror("Errore", message)
+
+    def git_cherry_pick_commit(self, commit_hash: str):
+        """Esegue un cherry-pick di un commit."""
+        if not messagebox.askyesno("Conferma Cherry-Pick", f"Sei sicuro di voler fare il cherry-pick del commit {commit_hash[:7]} sul branch corrente?"):
+            return
+
+        success, message = self.git_manager.cherry_pick(commit_hash)
+        if success:
+            messagebox.showinfo("Successo", "Cherry-pick completato.")
+            self.refresh_git_status()
+        else:
+            messagebox.showerror("Errore", f"Cherry-pick fallito:\n{message}")
+
+    # Assicurati di avere anche una funzione per la clipboard
+    def clipboard_append(self, text: str):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.update() # Necessario su alcuni sistemi
 
 
 def main():
