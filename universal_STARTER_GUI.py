@@ -1762,7 +1762,9 @@ except Exception as e:
             count_result = subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True, text=True, cwd=os.getcwd())
             if count_result.returncode == 0 and int(count_result.stdout.strip()) > 0:
                 has_commits = True
-        except (FileNotFoundError, ValueError):
+            print(f"Has commits: {has_commits}, count: {count_result.stdout.strip()}")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error checking commits: {e}")
             pass
 
         # Draw branch graph
@@ -1804,6 +1806,7 @@ except Exception as e:
         """Parse git log for commit graph."""
         try:
             result = subprocess.run(["git", "log", "--pretty=format:%H,%s,%p", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
+            print(f"Git log result: {result.returncode}, stdout: '{result.stdout[:100]}...', stderr: '{result.stderr}'")
             if result.returncode == 0:
                 commits = []
                 lines = result.stdout.strip().split('\n')
@@ -1816,7 +1819,8 @@ except Exception as e:
                             msg = parts[1][:20]
                             parents = parts[2:] if len(parts) > 2 else []
                             commits.append({'hash': parts[0], 'msg': msg, 'parents': parents, 'x': 50, 'y': y})
-                            y += 60
+                            y += 70  # Increased spacing
+                print(f"Parsed {len(commits)} commits")
                 return commits
             else:
                 print(f"Parse git log error: {result.stderr}")
@@ -1828,6 +1832,7 @@ except Exception as e:
     def draw_commit_graph(self, commits):
         """Draw commit graph on canvas."""
         self.git_graph_canvas.delete("all")
+        print(f"Drawing {len(commits)} commits")
         if not commits:
             self.git_graph_canvas.create_text(100, 100, text="Errore nel caricamento grafico", fill="white")
             return
