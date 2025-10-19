@@ -1050,6 +1050,9 @@ class App(ctk.CTk):
 
         # Inizializza status git
         self.refresh_git_status()
+
+        # Start auto-refresh for git status
+        self.start_git_auto_refresh()
     
     def open_env_manager(self):
         """Open the environment manager window."""
@@ -1660,6 +1663,7 @@ except Exception as e:
         # Get current branch
         try:
             result = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True, cwd=os.getcwd())
+            print(f"Git branch result: {result.returncode}, stdout: '{result.stdout.strip()}', stderr: '{result.stderr.strip()}'")
             if result.returncode == 0:
                 branch = result.stdout.strip()
                 self.git_branch_label.configure(text=f"Branch: {branch}")
@@ -1706,24 +1710,46 @@ except Exception as e:
             label = ctk.CTkLabel(self.git_files_frame, text="Git non installato")
             label.pack(pady=5)
 
-        # Get branch graph
+        # Check if repo has commits
+        has_commits = False
         try:
-            result = subprocess.run(["git", "log", "--graph", "--oneline", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
-            if result.returncode == 0:
-                graph = result.stdout.strip()
+            count_result = subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True, text=True, cwd=os.getcwd())
+            if count_result.returncode == 0 and int(count_result.stdout.strip()) > 0:
+                has_commits = True
+        except (FileNotFoundError, ValueError):
+            pass
+
+        # Get branch graph
+        if has_commits:
+            try:
+                result = subprocess.run(["git", "log", "--graph", "--oneline", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
+                print(f"Git graph result: {result.returncode}, stdout length: {len(result.stdout)}, stderr: '{result.stderr.strip()}'")
+                if result.returncode == 0:
+                    graph = result.stdout.strip()
+                    if graph:
+                        self.git_graph_textbox.configure(state="normal")
+                        self.git_graph_textbox.delete("1.0", "end")
+                        self.git_graph_textbox.insert("1.0", graph)
+                        self.git_graph_textbox.configure(state="disabled")
+                    else:
+                        self.git_graph_textbox.configure(state="normal")
+                        self.git_graph_textbox.delete("1.0", "end")
+                        self.git_graph_textbox.insert("1.0", "Grafico vuoto (possibile errore)")
+                        self.git_graph_textbox.configure(state="disabled")
+                else:
+                    self.git_graph_textbox.configure(state="normal")
+                    self.git_graph_textbox.delete("1.0", "end")
+                    self.git_graph_textbox.insert("1.0", f"Errore nel recupero grafico: {result.stderr.strip()}")
+                    self.git_graph_textbox.configure(state="disabled")
+            except FileNotFoundError:
                 self.git_graph_textbox.configure(state="normal")
                 self.git_graph_textbox.delete("1.0", "end")
-                self.git_graph_textbox.insert("1.0", graph)
+                self.git_graph_textbox.insert("1.0", "Git non trovato")
                 self.git_graph_textbox.configure(state="disabled")
-            else:
-                self.git_graph_textbox.configure(state="normal")
-                self.git_graph_textbox.delete("1.0", "end")
-                self.git_graph_textbox.insert("1.0", "Errore nel recupero grafico")
-                self.git_graph_textbox.configure(state="disabled")
-        except FileNotFoundError:
+        else:
             self.git_graph_textbox.configure(state="normal")
             self.git_graph_textbox.delete("1.0", "end")
-            self.git_graph_textbox.insert("1.0", "Git non trovato")
+            self.git_graph_textbox.insert("1.0", "Nessun commit trovato nel repository")
             self.git_graph_textbox.configure(state="disabled")
 
         # Abilita pulsanti se git disponibile
@@ -1740,6 +1766,18 @@ except Exception as e:
             self.merge_btn.configure(state="disabled")
             self.revert_btn.configure(state="disabled")
             self.resume_btn.configure(state="disabled")
+
+    def start_git_auto_refresh(self):
+        """Start automatic refresh of git status every 30 seconds."""
+        self.after(30000, self.auto_refresh_git_status)
+
+    def auto_refresh_git_status(self):
+        """Auto-refresh git status if git tab is active."""
+        # Check if git tab is the current tab
+        if self.tabview.get() == "Git Status":
+            self.refresh_git_status()
+        # Schedule next refresh
+        self.after(30000, self.auto_refresh_git_status)
 
     def git_commit(self):
         msg = simpledialog.askstring("Commit", "Messaggio commit:")
