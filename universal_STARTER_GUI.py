@@ -1027,8 +1027,8 @@ class App(ctk.CTk):
         refresh_git_btn.pack(side="right")
 
         # Scrollable frame per file git
-        self.git_files_frame = ctk.CTkScrollableFrame(git_tab)
-        self.git_files_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.git_files_frame = ctk.CTkScrollableFrame(git_tab, height=200)
+        self.git_files_frame.pack(pady=5, padx=10, fill="x")
 
         # Pulsanti per staging
         stage_frame = ctk.CTkFrame(git_tab)
