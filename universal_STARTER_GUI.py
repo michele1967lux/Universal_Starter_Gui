@@ -1015,6 +1015,7 @@ class App(ctk.CTk):
 
         # Tab Git Status
         self.tabview.add("Git Status")
+        self.tabview.bind("<<NotebookTabChanged>>", self.on_tab_change)
         git_tab = self.tabview.tab("Git Status")
 
         # Header per git status
@@ -1043,7 +1044,7 @@ class App(ctk.CTk):
         # Frame per canvas e scrollbar
         canvas_frame = ctk.CTkFrame(git_tab)
         canvas_frame.pack(pady=5, padx=10, fill="both", expand=True)
-        self.git_graph_canvas = tk.Canvas(canvas_frame, bg="gray20")
+        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, bg="gray20")
         scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.yview)
         self.git_graph_canvas.configure(yscrollcommand=scrollbar.set)
         self.git_graph_canvas.pack(side="left", fill="both", expand=True)
@@ -1077,6 +1078,11 @@ class App(ctk.CTk):
 
         # Start auto-refresh for git status
         self.start_git_auto_refresh()
+
+    def on_tab_change(self, event):
+        """Handle tab change to refresh git status when Git Status tab is selected."""
+        if self.tabview.get() == "Git Status":
+            self.refresh_git_status()
 
     def create_tooltip(self, widget, text):
         """Create a simple tooltip for a widget."""
@@ -1859,9 +1865,14 @@ except Exception as e:
                     self.git_graph_canvas.create_line(x+100, y+50, commits[parent_index]['x']+100, parent_y, fill="white", arrow=tk.LAST)
             max_y = max(max_y, y + 50)
 
-        # Update scroll region
-        self.git_graph_canvas.configure(scrollregion=self.git_graph_canvas.bbox("all"))
+        # Update scroll region manually
+        max_x = 250
+        scroll_max_y = max_y if commits else 200
+        self.git_graph_canvas.configure(scrollregion=(0, 0, max_x, scroll_max_y))
+        print(f"Scroll region set to: (0, 0, {max_x}, {scroll_max_y})")
         self.git_graph_canvas.update_idletasks()
+        self.git_graph_canvas.update()
+        print("Canvas updated")
 
     def on_commit_click(self, commit):
         """Handle commit click."""
