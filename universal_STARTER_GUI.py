@@ -97,6 +97,28 @@ def log_to_console(console: ctk.CTkTextbox, message: str):
         print(f"Error logging to console: {e}")
 
 
+def find_git_repo_root() -> str:
+    """
+    Trova la cartella principale del repository Git in cui si trova
+    la directory di lavoro corrente. Se non è in un repo, restituisce la CWD.
+    """
+    try:
+        # Esegue il comando git per trovare la cartella di primo livello
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,  # Lancia un'eccezione se il comando fallisce
+            cwd=os.getcwd() # Esegui dalla CWD corrente
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Se il comando fallisce o git non è installato,
+        # significa che non siamo in un repository Git.
+        # In questo caso, torna a usare la CWD come fallback.
+        return os.getcwd()
+
+
 class RequirementsEditor(ctk.CTkToplevel):
     """Window for editing requirements.txt."""
 
@@ -1107,6 +1129,16 @@ class GitManager:
             "nodes_map": nodes_map,
         }
 
+    def init(self) -> Tuple[bool, str]:
+        """Inizializza un nuovo repository Git nella cartella di lavoro."""
+        ret, out, err = self._run_git_command(["init"])
+        return ret == 0, out if ret == 0 else err
+
+    def create_new_branch(self, branch_name: str) -> Tuple[bool, str]:
+        """Crea un nuovo branch dal punto corrente (HEAD)."""
+        ret, out, err = self._run_git_command(["branch", branch_name])
+        return ret == 0, out if ret == 0 else err
+
 
 class GitOperationManager:
     """Gestisce operazioni Git asincrone per evitare blocco della GUI."""
@@ -1185,8 +1217,11 @@ class App(ctk.CTk):
         self.config_file = "config_STARTER_GUI.json"
         self.current_tab = None  # Track current tab for change detection
 
+        # CORREZIONE: Trova la root del repo invece di usare la CWD
+        repo_path = find_git_repo_root()
+
         # NUOVA RIGA: Inizializza il GitManager
-        self.git_manager = GitManager(os.getcwd())
+        self.git_manager = GitManager(repo_path)
 
         # Inizializza il GitOperationManager per operazioni asincrone
         self.git_op_manager = GitOperationManager(self.git_manager, self)
@@ -1298,39 +1333,40 @@ class App(ctk.CTk):
         self.tabview.add("Git Status")
         git_tab = self.tabview.tab("Git Status")
 
-        # Header per git status
-        git_header = ctk.CTkFrame(git_tab)
-        git_header.pack(pady=5, padx=10, fill="x")
-        self.git_branch_label = ctk.CTkLabel(git_header, text="Branch: N/A")
+        # NUOVO: Frame per l'inizializzazione di Git (mostrato solo se non è un repo)
+        self.git_init_frame = ctk.CTkFrame(git_tab)
+        ctk.CTkLabel(self.git_init_frame, text="Questa cartella non è un repository Git.").pack(pady=10)
+        ctk.CTkButton(self.git_init_frame, text="Inizializza Repository Qui", command=self.git_init).pack(pady=10)
+
+        # Frame esistenti (ora verranno mostrati/nascosti dinamicamente)
+        self.git_header_frame = ctk.CTkFrame(git_tab)
+        self.git_header_frame.pack(pady=5, padx=10, fill="x")
+        self.git_branch_label = ctk.CTkLabel(self.git_header_frame, text="Branch: N/A")
         self.git_branch_label.pack(side="left", padx=(0, 10))
 
         # Configurazione limite commit
-        ctk.CTkLabel(git_header, text="Commit da mostrare:").pack(side="left")
-        self.git_commit_limit_entry = ctk.CTkEntry(git_header, width=50)
+        ctk.CTkLabel(self.git_header_frame, text="Commit da mostrare:").pack(side="left")
+        self.git_commit_limit_entry = ctk.CTkEntry(self.git_header_frame, width=50)
         self.git_commit_limit_entry.insert(0, "50")
         self.git_commit_limit_entry.pack(side="left", padx=5)
 
-        refresh_git_btn = ctk.CTkButton(git_header, text="Aggiorna", command=self.refresh_git_status_async)
+        refresh_git_btn = ctk.CTkButton(self.git_header_frame, text="Aggiorna", command=self.refresh_git_status_async)
         refresh_git_btn.pack(side="right")
 
         # Scrollable frame per file git
         self.git_files_frame = ctk.CTkScrollableFrame(git_tab, height=200)
-        self.git_files_frame.pack(pady=5, padx=10, fill="x")
 
         # Pulsanti per staging
-        stage_frame = ctk.CTkFrame(git_tab)
-        stage_frame.pack(pady=5, padx=10, fill="x")
-        self.stage_selected_btn = ctk.CTkButton(stage_frame, text="Stage Selezionati", command=self.stage_selected_files)
+        self.git_stage_frame = ctk.CTkFrame(git_tab)
+        self.stage_selected_btn = ctk.CTkButton(self.git_stage_frame, text="Stage Selezionati", command=self.stage_selected_files)
         self.stage_selected_btn.pack(side="left", padx=5)
-        self.unstage_selected_btn = ctk.CTkButton(stage_frame, text="Unstage Selezionati", command=self.unstage_selected_files)
+        self.unstage_selected_btn = ctk.CTkButton(self.git_stage_frame, text="Unstage Selezionati", command=self.unstage_selected_files)
         self.unstage_selected_btn.pack(side="left", padx=5)
 
         # Sezione grafico branch
-        graph_label = ctk.CTkLabel(git_tab, text="Grafico Branch:", font=("Arial", 12, "bold"))
-        graph_label.pack(pady=(10, 5), padx=10, anchor="w")
+        self.git_graph_label = ctk.CTkLabel(git_tab, text="Grafico Branch:", font=("Arial", 12, "bold"))
         # Frame per canvas e scrollbar
-        canvas_frame = ctk.CTkFrame(git_tab)
-        canvas_frame.pack(pady=5, padx=10, fill="both", expand=True)
+        self.git_canvas_frame = ctk.CTkFrame(git_tab)
 
         self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, bg="gray20", highlightthickness=0)
 
@@ -1346,17 +1382,19 @@ class App(ctk.CTk):
         self.git_graph_canvas.pack(side="left", fill="both", expand=True)
 
         # Pulsanti azioni git
-        actions_frame = ctk.CTkFrame(git_tab)
-        actions_frame.pack(pady=10, padx=10, fill="x")
-        self.commit_btn = ctk.CTkButton(actions_frame, text="Commit", command=self.git_commit, state="disabled")
+        self.git_actions_frame = ctk.CTkFrame(git_tab)
+        self.commit_btn = ctk.CTkButton(self.git_actions_frame, text="Commit", command=self.git_commit, state="disabled")
         self.commit_btn.pack(side="left", padx=5)
-        self.push_btn = ctk.CTkButton(actions_frame, text="Push", command=self.git_push, state="disabled")
+        self.push_btn = ctk.CTkButton(self.git_actions_frame, text="Push", command=self.git_push, state="disabled")
         self.push_btn.pack(side="left", padx=5)
-        self.merge_btn = ctk.CTkButton(actions_frame, text="Merge", command=self.git_merge, state="disabled")
+        self.merge_btn = ctk.CTkButton(self.git_actions_frame, text="Merge", command=self.git_merge, state="disabled")
         self.merge_btn.pack(side="left", padx=5)
-        self.revert_btn = ctk.CTkButton(actions_frame, text="Revert", command=self.git_revert, state="disabled")
+        # NUOVO: Pulsante Crea Branch
+        self.create_branch_btn = ctk.CTkButton(self.git_actions_frame, text="Crea Branch", command=self.git_create_branch, state="disabled")
+        self.create_branch_btn.pack(side="left", padx=5)
+        self.revert_btn = ctk.CTkButton(self.git_actions_frame, text="Revert", command=self.git_revert, state="disabled")
         self.revert_btn.pack(side="left", padx=5)
-        self.resume_btn = ctk.CTkButton(actions_frame, text="Resume", command=self.git_resume, state="disabled")
+        self.resume_btn = ctk.CTkButton(self.git_actions_frame, text="Resume", command=self.git_resume, state="disabled")
         self.resume_btn.pack(side="left", padx=5)
 
         # Indicatori di progresso e stato per operazioni Git
@@ -1377,6 +1415,7 @@ class App(ctk.CTk):
         self.create_tooltip(self.commit_btn, "Crea un nuovo commit con i file attualmente staged.")
         self.create_tooltip(self.push_btn, "Invia i commit locali al repository remoto.")
         self.create_tooltip(self.merge_btn, "Unisci un branch selezionato nel branch corrente.")
+        self.create_tooltip(self.create_branch_btn, "Crea un nuovo branch dal punto corrente (HEAD).")
         self.create_tooltip(self.revert_btn, "Annulla le modifiche di un commit specifico.")
         self.create_tooltip(self.resume_btn, "Riprendi un'operazione interrotta (merge/rebase).")
         self.create_tooltip(self.stage_selected_btn, "Aggiungi i file selezionati all'area di staging.")
@@ -2089,52 +2128,54 @@ except Exception as e:
         self.git_op_manager.execute_async("refresh", self.git_manager.get_all_refresh_data, max_commits=limit)
 
     def refresh_git_status(self, data: Dict):
-        """
-        DISEGNA lo stato di Git sulla UI usando i dati pre-caricati.
-        Questa funzione è veloce e non bloccante.
-        """
-        # Clear existing file widgets
+        """DISEGNA lo stato di Git sulla UI usando i dati pre-caricati."""
+        # Nascondi tutti i frame Git per iniziare
+        self.git_init_frame.pack_forget()
+        self.git_header_frame.pack_forget()
+        self.git_files_frame.pack_forget()
+        self.git_stage_frame.pack_forget()
+        self.git_graph_label.pack_forget()
+        self.git_canvas_frame.pack_forget()
+        self.git_actions_frame.pack_forget()
+        self.git_progress_frame.pack_forget()
+
+        if not data["is_repo"]:
+            # Mostra solo il frame di inizializzazione
+            self.git_init_frame.pack(pady=20, padx=10, fill="x")
+            return
+
+        # Mostra tutti i frame della UI Git normale
+        self.git_header_frame.pack(pady=5, padx=10, fill="x")
+        self.git_files_frame.pack(pady=5, padx=10, fill="x")
+        self.git_stage_frame.pack(pady=5, padx=10, fill="x")
+        self.git_graph_label.pack(pady=(10, 5), padx=10, anchor="w")
+        self.git_canvas_frame.pack(pady=5, padx=10, fill="both", expand=True)
+        self.git_actions_frame.pack(pady=10, padx=10, fill="x")
+        self.git_progress_frame.pack(pady=5, padx=10, fill="x")
+
         for widget in self.git_files_frame.winfo_children():
             widget.destroy()
         self.git_file_checkboxes = []
-
-        if not data["is_repo"]:
-            self.git_branch_label.configure(text="Branch: N/A (non è un repository git)")
-            self.git_graph_canvas.delete("all")
-            self.git_graph_canvas.create_text(200, 50, text="Nessun repository Git trovato in questa cartella.", fill="white")
-            return
 
         self.git_branch_label.configure(text=f"Branch: {data['branch']}")
 
         status_files = data["status_files"]
         if not status_files:
-            label = ctk.CTkLabel(self.git_files_frame, text="Nessun file modificato. Working tree pulito.")
-            label.pack(pady=5)
+            ctk.CTkLabel(self.git_files_frame, text="Nessun file modificato. Working tree pulito.").pack(pady=5)
         else:
             for file_info in status_files:
                 frame = ctk.CTkFrame(self.git_files_frame)
                 frame.pack(pady=2, padx=5, fill="x")
-
                 checkbox = ctk.CTkCheckBox(frame, text="", width=20)
                 checkbox.pack(side="left", padx=5)
                 self.git_file_checkboxes.append((checkbox, file_info['path']))
-
-                # Visualizza lo stato
                 staged_text = f"Staged: {file_info['staged']}" if file_info['staged'] != 'none' else ""
                 unstaged_text = f"Unstaged: {file_info['unstaged']}" if file_info['unstaged'] != 'none' else ""
                 status_text = ", ".join(filter(None, [staged_text, unstaged_text]))
-
                 info = ctk.CTkLabel(frame, text=f"{file_info['path']} ({status_text})", anchor="w")
                 info.pack(side="left", fill="x", expand=True)
 
-        # Draw commit graph
         self.draw_commit_graph(data["commits"], data["nodes_map"])
-
-        # Abilita i pulsanti se non ci sono operazioni in corso
-        if not any(self.git_op_manager.is_operation_active(op) for op in ["checkout", "commit", "push", "merge", "revert", "resume", "stage", "unstage"]):
-            self._set_git_buttons_state("normal")
-        else:
-            self._set_git_buttons_state("disabled")
 
     def start_git_auto_refresh(self):
         """Start automatic refresh of git status every 30 seconds."""
@@ -2222,7 +2263,16 @@ except Exception as e:
         """Checkout to a specific commit asynchronously."""
         self.git_op_manager.execute_async("checkout", self.git_manager.checkout, commit_hash)
 
+    # NUOVI METODI PER LE AZIONI GIT
+    def git_init(self):
+        """Inizializza un nuovo repository Git in modo asincrono."""
+        self.git_op_manager.execute_async("init", self.git_manager.init)
 
+    def git_create_branch(self):
+        """Crea un nuovo branch in modo asincrono."""
+        branch_name = simpledialog.askstring("Crea Branch", "Inserisci il nome del nuovo branch:")
+        if branch_name:
+            self.git_op_manager.execute_async("create_branch", self.git_manager.create_new_branch, branch_name)
 
     def git_commit(self):
         """Commit staged files asynchronously."""
