@@ -1040,8 +1040,14 @@ class App(ctk.CTk):
         # Sezione grafico branch
         graph_label = ctk.CTkLabel(git_tab, text="Grafico Branch:", font=("Arial", 12, "bold"))
         graph_label.pack(pady=(10, 5), padx=10, anchor="w")
-        self.git_graph_canvas = ctk.CTkCanvas(git_tab, height=200, bg="gray20")
-        self.git_graph_canvas.pack(pady=5, padx=10, fill="both", expand=True)
+        # Frame per canvas e scrollbar
+        canvas_frame = ctk.CTkFrame(git_tab)
+        canvas_frame.pack(pady=5, padx=10, fill="both", expand=True)
+        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, height=200, bg="gray20")
+        scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.yview)
+        self.git_graph_canvas.configure(yscrollcommand=scrollbar.set)
+        self.git_graph_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
         # Pulsanti azioni git
         actions_frame = ctk.CTkFrame(git_tab)
@@ -1057,12 +1063,38 @@ class App(ctk.CTk):
         self.resume_btn = ctk.CTkButton(actions_frame, text="Resume", command=self.git_resume, state="disabled")
         self.resume_btn.pack(side="left", padx=5)
 
+        # Aggiungi tooltip
+        self.create_tooltip(self.commit_btn, "Crea un nuovo commit con i file attualmente staged.")
+        self.create_tooltip(self.push_btn, "Invia i commit locali al repository remoto.")
+        self.create_tooltip(self.merge_btn, "Unisci un branch selezionato nel branch corrente.")
+        self.create_tooltip(self.revert_btn, "Annulla le modifiche di un commit specifico.")
+        self.create_tooltip(self.resume_btn, "Riprendi un'operazione interrotta (merge/rebase).")
+        self.create_tooltip(self.stage_selected_btn, "Aggiungi i file selezionati all'area di staging.")
+        self.create_tooltip(self.unstage_selected_btn, "Rimuovi i file selezionati dall'area di staging.")
+
         # Inizializza status git
         self.refresh_git_status()
 
         # Start auto-refresh for git status
         self.start_git_auto_refresh()
-    
+
+    def create_tooltip(self, widget, text):
+        """Create a simple tooltip for a widget."""
+        tooltip_label = None
+        def show_tooltip(event):
+            nonlocal tooltip_label
+            if tooltip_label:
+                tooltip_label.destroy()
+            tooltip_label = tk.Label(self, text=text, bg="yellow", relief="solid", borderwidth=1, font=("Arial", 8))
+            tooltip_label.place(x=event.x + widget.winfo_x() + 10, y=event.y + widget.winfo_y() + 20)
+        def hide_tooltip(event):
+            nonlocal tooltip_label
+            if tooltip_label:
+                tooltip_label.destroy()
+                tooltip_label = None
+        widget.bind("<Enter>", show_tooltip)
+        widget.bind("<Leave>", hide_tooltip)
+
     def open_env_manager(self):
         """Open the environment manager window."""
         EnvManagerWindow(self, self.on_environment_selected)
@@ -1800,22 +1832,30 @@ except Exception as e:
             self.git_graph_canvas.create_text(100, 100, text="Errore nel caricamento grafico", fill="white")
             return
 
+        import textwrap
+        max_y = 0
         for i, commit in enumerate(commits):
             x, y = commit['x'], commit['y']
-            # Draw rectangle
-            self.git_graph_canvas.create_rectangle(x, y, x+150, y+40, fill="lightblue", outline="white")
-            # Draw text
-            self.git_graph_canvas.create_text(x+75, y+10, text=commit['hash'][:7], fill="black", font=("Arial", 8))
-            self.git_graph_canvas.create_text(x+75, y+25, text=commit['msg'], fill="black", font=("Arial", 8))
+            # Draw rectangle larger and lower
+            self.git_graph_canvas.create_rectangle(x, y, x+200, y+50, fill="lightblue", outline="white")
+            # Draw text: hash and wrapped message
+            self.git_graph_canvas.create_text(x+100, y+10, text=commit['hash'][:7], fill="black", font=("Arial", 8, "bold"))
+            wrapped_lines = textwrap.wrap(commit['msg'], width=25)
+            for j, line in enumerate(wrapped_lines[:4]):  # Max 4 lines
+                self.git_graph_canvas.create_text(x+100, y+25 + j*10, text=line, fill="black", font=("Arial", 8))
             # Bind click
             self.git_graph_canvas.tag_bind(f"commit_{i}", "<Button-1>", lambda e, c=commit: self.on_commit_click(c))
-            self.git_graph_canvas.addtag_withtag(f"commit_{i}", self.git_graph_canvas.create_rectangle(x, y, x+150, y+40))
+            self.git_graph_canvas.addtag_withtag(f"commit_{i}", self.git_graph_canvas.create_rectangle(x, y, x+200, y+50))
             # Draw lines to parents
             for parent_hash in commit['parents']:
                 parent_index = next((j for j, c in enumerate(commits) if c['hash'] == parent_hash), None)
                 if parent_index is not None:
-                    parent_y = commits[parent_index]['y'] + 20
-                    self.git_graph_canvas.create_line(x+75, y+40, commits[parent_index]['x']+75, parent_y, fill="white", arrow=tk.LAST)
+                    parent_y = commits[parent_index]['y'] + 25
+                    self.git_graph_canvas.create_line(x+100, y+50, commits[parent_index]['x']+100, parent_y, fill="white", arrow=tk.LAST)
+            max_y = max(max_y, y + 50)
+
+        # Update scroll region
+        self.git_graph_canvas.configure(scrollregion=self.git_graph_canvas.bbox("all"))
 
     def on_commit_click(self, commit):
         """Handle commit click."""
