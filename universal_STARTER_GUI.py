@@ -1100,8 +1100,8 @@ class App(ctk.CTk):
     
     def setup_gui(self):
         """Setup the main GUI."""
-        # Crea tabview principale
-        self.tabview = ctk.CTkTabview(self, width=1200, height=700)
+        # Crea tabview principale con la command per il cambio tab
+        self.tabview = ctk.CTkTabview(self, width=1200, height=700, command=self.on_tab_change)
         self.tabview.pack(pady=10, padx=10, fill="both", expand=True)
 
         # Tab Main (contenuto esistente)
@@ -1191,7 +1191,6 @@ class App(ctk.CTk):
 
         # Tab Git Status
         self.tabview.add("Git Status")
-        self.tabview._tabview.bind("<<NotebookTabChanged>>", self.on_tab_change)
         git_tab = self.tabview.tab("Git Status")
 
         # Header per git status
@@ -1320,7 +1319,7 @@ Azioni Git:
         # Start auto-refresh for git status
         self.start_git_auto_refresh()
 
-    def on_tab_change(self, event):
+    def on_tab_change(self):
         """Handle tab change to refresh git status when Git Status tab is selected."""
         if self.tabview.get() == "Git Status":
             self.refresh_git_status()
@@ -2004,32 +2003,6 @@ except Exception as e:
         # Schedule next refresh
         self.after(30000, self.auto_refresh_git_status)
 
-    def parse_git_log(self):
-        """Parse git log for commit graph."""
-        try:
-            result = subprocess.run(["git", "log", "--pretty=format:%H|%s|%p", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
-            print(f"Git log result: {result.returncode}, stdout: '{result.stdout[:100]}...', stderr: '{result.stderr}'")
-            if result.returncode == 0:
-                commits = []
-                lines = result.stdout.strip().split('\n')
-                y = 20
-                for line in lines:
-                    if line:
-                        parts = line.split('|')
-                        if len(parts) >= 2:
-                            hash_short = parts[0][:7]
-                            msg = parts[1][:20]
-                            parents = parts[2:] if len(parts) > 2 else []
-                            commits.append({'hash': parts[0], 'msg': msg, 'parents': parents, 'x': 50, 'y': y})
-                            y += 70  # Increased spacing
-                print(f"Parsed {len(commits)} commits")
-                return commits
-            else:
-                print(f"Parse git log error: {result.stderr}")
-                return []
-        except Exception as e:
-            print(f"Error parsing git log: {e}")
-            return []
 
     def draw_commit_graph(self, commits: List[Dict], nodes_map: Dict):
         """Draw commit graph on canvas based on pre-calculated layout data."""
@@ -2088,7 +2061,7 @@ except Exception as e:
         menu.add_command(label=f"Crea branch da {short_hash}", command=lambda: self.git_create_branch_from(commit_hash))
         menu.add_command(label=f"Cherry-pick {short_hash}", command=lambda: self.git_cherry_pick_commit(commit_hash))
         menu.add_separator()
-        menu.add_command(label="Copia Hash completo", command=lambda: self.clipboard_append(commit_hash))
+        menu.add_command(label="Copia Hash completo", command=lambda: self.copy_to_clipboard(commit_hash))
         menu.add_command(label="Mostra Dettagli", command=lambda: messagebox.showinfo(
             f"Commit {short_hash}",
             f"Hash: {commit['hash']}\nAutore: {commit['author']}\n\nMessaggio:\n{commit['msg']}"
@@ -2108,17 +2081,7 @@ except Exception as e:
         except Exception as e:
             messagebox.showerror("Errore", str(e))
 
-    def git_revert_commit(self, commit_hash):
-        """Revert commit."""
-        try:
-            result = subprocess.run(["git", "revert", commit_hash], cwd=os.getcwd(), capture_output=True, text=True)
-            if result.returncode == 0:
-                messagebox.showinfo("Successo", f"Revert di {commit_hash[:7]}")
-                self.refresh_git_status()
-            else:
-                messagebox.showerror("Errore", result.stderr)
-        except Exception as e:
-            messagebox.showerror("Errore", str(e))
+
 
     def git_commit(self):
         # Check if there are staged files
@@ -2249,7 +2212,8 @@ except Exception as e:
             messagebox.showerror("Errore", f"Cherry-pick fallito:\n{message}")
 
     # Assicurati di avere anche una funzione per la clipboard
-    def clipboard_append(self, text: str):
+    def copy_to_clipboard(self, text: str):
+        """Pulisce la clipboard e copia il nuovo testo."""
         self.clipboard_clear()
         self.clipboard_append(text)
         self.update() # Necessario su alcuni sistemi
