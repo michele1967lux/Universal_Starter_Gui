@@ -5,6 +5,7 @@ with Python virtual environment support (Venv and Conda).
 """
 
 import customtkinter as ctk
+import tkinter as tk
 # Check CustomTkinter version
 try:
     import importlib.metadata
@@ -1028,11 +1029,19 @@ class App(ctk.CTk):
         self.git_files_frame = ctk.CTkScrollableFrame(git_tab)
         self.git_files_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # Pulsanti per staging
+        stage_frame = ctk.CTkFrame(git_tab)
+        stage_frame.pack(pady=5, padx=10, fill="x")
+        self.stage_selected_btn = ctk.CTkButton(stage_frame, text="Stage Selezionati", command=self.stage_selected_files)
+        self.stage_selected_btn.pack(side="left", padx=5)
+        self.unstage_selected_btn = ctk.CTkButton(stage_frame, text="Unstage Selezionati", command=self.unstage_selected_files)
+        self.unstage_selected_btn.pack(side="left", padx=5)
+
         # Sezione grafico branch
         graph_label = ctk.CTkLabel(git_tab, text="Grafico Branch:", font=("Arial", 12, "bold"))
         graph_label.pack(pady=(10, 5), padx=10, anchor="w")
-        self.git_graph_textbox = ctk.CTkTextbox(git_tab, height=200, state="disabled")
-        self.git_graph_textbox.pack(pady=5, padx=10, fill="both", expand=True)
+        self.git_graph_canvas = ctk.CTkCanvas(git_tab, height=200, bg="gray20")
+        self.git_graph_canvas.pack(pady=5, padx=10, fill="both", expand=True)
 
         # Pulsanti azioni git
         actions_frame = ctk.CTkFrame(git_tab)
@@ -1659,6 +1668,7 @@ except Exception as e:
         # Clear existing widgets
         for widget in self.git_files_frame.winfo_children():
             widget.destroy()
+        self.git_file_checkboxes = []
 
         # Get current branch
         try:
@@ -1679,7 +1689,7 @@ except Exception as e:
                 lines = result.stdout.strip().split('\n')
                 if lines == ['']:
                     # No changes
-                    label = ctk.CTkLabel(self.git_files_frame, text="Repository pulito")
+                    label = ctk.CTkLabel(self.git_files_frame, text="Nessun file modificato")
                     label.pack(pady=5)
                 else:
                     for line in lines:
@@ -1699,6 +1709,10 @@ except Exception as e:
 
                             frame = ctk.CTkFrame(self.git_files_frame)
                             frame.pack(pady=2, padx=5, fill="x")
+                            # Checkbox for staging
+                            checkbox = ctk.CTkCheckBox(frame, text="", width=20)
+                            checkbox.pack(side="left", padx=5)
+                            self.git_file_checkboxes.append((checkbox, file_path, status))
                             indicator = ctk.CTkLabel(frame, text="●", text_color=color, font=("Arial", 20))
                             indicator.pack(side="left", padx=5)
                             info = ctk.CTkLabel(frame, text=f"{file_path} ({status_text})", anchor="w")
@@ -1719,38 +1733,13 @@ except Exception as e:
         except (FileNotFoundError, ValueError):
             pass
 
-        # Get branch graph
+        # Draw branch graph
         if has_commits:
-            try:
-                result = subprocess.run(["git", "log", "--graph", "--oneline", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
-                print(f"Git graph result: {result.returncode}, stdout length: {len(result.stdout)}, stderr: '{result.stderr.strip()}'")
-                if result.returncode == 0:
-                    graph = result.stdout.strip()
-                    if graph:
-                        self.git_graph_textbox.configure(state="normal")
-                        self.git_graph_textbox.delete("1.0", "end")
-                        self.git_graph_textbox.insert("1.0", graph)
-                        self.git_graph_textbox.configure(state="disabled")
-                    else:
-                        self.git_graph_textbox.configure(state="normal")
-                        self.git_graph_textbox.delete("1.0", "end")
-                        self.git_graph_textbox.insert("1.0", "Grafico vuoto (possibile errore)")
-                        self.git_graph_textbox.configure(state="disabled")
-                else:
-                    self.git_graph_textbox.configure(state="normal")
-                    self.git_graph_textbox.delete("1.0", "end")
-                    self.git_graph_textbox.insert("1.0", f"Errore nel recupero grafico: {result.stderr.strip()}")
-                    self.git_graph_textbox.configure(state="disabled")
-            except FileNotFoundError:
-                self.git_graph_textbox.configure(state="normal")
-                self.git_graph_textbox.delete("1.0", "end")
-                self.git_graph_textbox.insert("1.0", "Git non trovato")
-                self.git_graph_textbox.configure(state="disabled")
+            commits = self.parse_git_log()
+            self.draw_commit_graph(commits)
         else:
-            self.git_graph_textbox.configure(state="normal")
-            self.git_graph_textbox.delete("1.0", "end")
-            self.git_graph_textbox.insert("1.0", "Nessun commit trovato nel repository")
-            self.git_graph_textbox.configure(state="disabled")
+            self.git_graph_canvas.delete("all")
+            self.git_graph_canvas.create_text(100, 100, text="Nessun commit trovato nel repository", fill="white")
 
         # Abilita pulsanti se git disponibile
         try:
@@ -1779,7 +1768,98 @@ except Exception as e:
         # Schedule next refresh
         self.after(30000, self.auto_refresh_git_status)
 
+    def parse_git_log(self):
+        """Parse git log for commit graph."""
+        try:
+            result = subprocess.run(["git", "log", "--pretty=format:%H,%s,%p", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
+            if result.returncode == 0:
+                commits = []
+                lines = result.stdout.strip().split('\n')
+                y = 20
+                for line in lines:
+                    if line:
+                        parts = line.split(',')
+                        if len(parts) >= 2:
+                            hash_short = parts[0][:7]
+                            msg = parts[1][:20]
+                            parents = parts[2:] if len(parts) > 2 else []
+                            commits.append({'hash': parts[0], 'msg': msg, 'parents': parents, 'x': 50, 'y': y})
+                            y += 60
+                return commits
+            else:
+                print(f"Parse git log error: {result.stderr}")
+                return []
+        except Exception as e:
+            print(f"Error parsing git log: {e}")
+            return []
+
+    def draw_commit_graph(self, commits):
+        """Draw commit graph on canvas."""
+        self.git_graph_canvas.delete("all")
+        if not commits:
+            self.git_graph_canvas.create_text(100, 100, text="Errore nel caricamento grafico", fill="white")
+            return
+
+        for i, commit in enumerate(commits):
+            x, y = commit['x'], commit['y']
+            # Draw rectangle
+            self.git_graph_canvas.create_rectangle(x, y, x+150, y+40, fill="lightblue", outline="white")
+            # Draw text
+            self.git_graph_canvas.create_text(x+75, y+10, text=commit['hash'][:7], fill="black", font=("Arial", 8))
+            self.git_graph_canvas.create_text(x+75, y+25, text=commit['msg'], fill="black", font=("Arial", 8))
+            # Bind click
+            self.git_graph_canvas.tag_bind(f"commit_{i}", "<Button-1>", lambda e, c=commit: self.on_commit_click(c))
+            self.git_graph_canvas.addtag_withtag(f"commit_{i}", self.git_graph_canvas.create_rectangle(x, y, x+150, y+40))
+            # Draw lines to parents
+            for parent_hash in commit['parents']:
+                parent_index = next((j for j, c in enumerate(commits) if c['hash'] == parent_hash), None)
+                if parent_index is not None:
+                    parent_y = commits[parent_index]['y'] + 20
+                    self.git_graph_canvas.create_line(x+75, y+40, commits[parent_index]['x']+75, parent_y, fill="white", arrow=tk.LAST)
+
+    def on_commit_click(self, commit):
+        """Handle commit click."""
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="Checkout", command=lambda: self.git_checkout_commit(commit['hash']))
+        menu.add_command(label="Revert", command=lambda: self.git_revert_commit(commit['hash']))
+        menu.add_command(label="Show Details", command=lambda: messagebox.showinfo("Commit", f"Hash: {commit['hash']}\nMsg: {commit['msg']}"))
+        menu.post(self.winfo_pointerx(), self.winfo_pointery())
+
+    def git_checkout_commit(self, commit_hash):
+        """Checkout to commit."""
+        try:
+            result = subprocess.run(["git", "checkout", commit_hash], cwd=os.getcwd(), capture_output=True, text=True)
+            if result.returncode == 0:
+                messagebox.showinfo("Successo", f"Checkout a {commit_hash[:7]}")
+                self.refresh_git_status()
+            else:
+                messagebox.showerror("Errore", result.stderr)
+        except Exception as e:
+            messagebox.showerror("Errore", str(e))
+
+    def git_revert_commit(self, commit_hash):
+        """Revert commit."""
+        try:
+            result = subprocess.run(["git", "revert", commit_hash], cwd=os.getcwd(), capture_output=True, text=True)
+            if result.returncode == 0:
+                messagebox.showinfo("Successo", f"Revert di {commit_hash[:7]}")
+                self.refresh_git_status()
+            else:
+                messagebox.showerror("Errore", result.stderr)
+        except Exception as e:
+            messagebox.showerror("Errore", str(e))
+
     def git_commit(self):
+        # Check if there are staged files
+        try:
+            staged_result = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=os.getcwd(), capture_output=True, text=True)
+            if staged_result.returncode != 0 or not staged_result.stdout.strip():
+                messagebox.showinfo("Info", "Nessun file staged. Seleziona e stage i file da committare.")
+                return
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore controllo staged: {e}")
+            return
+
         msg = simpledialog.askstring("Commit", "Messaggio commit:")
         if msg:
             try:
@@ -1847,6 +1927,32 @@ except Exception as e:
                 messagebox.showerror("Errore", result.stderr)
         except Exception as e:
             messagebox.showerror("Errore", str(e))
+
+    def stage_selected_files(self):
+        """Stage selected files."""
+        selected = [fp for cb, fp, st in self.git_file_checkboxes if cb.get()]
+        if not selected:
+            messagebox.showinfo("Info", "Nessun file selezionato")
+            return
+        for file_path in selected:
+            try:
+                subprocess.run(["git", "add", file_path], cwd=os.getcwd(), check=True)
+            except subprocess.CalledProcessError as e:
+                messagebox.showerror("Errore", f"Errore staging {file_path}: {e}")
+        self.refresh_git_status()
+
+    def unstage_selected_files(self):
+        """Unstage selected files."""
+        selected = [fp for cb, fp, st in self.git_file_checkboxes if cb.get()]
+        if not selected:
+            messagebox.showinfo("Info", "Nessun file selezionato")
+            return
+        for file_path in selected:
+            try:
+                subprocess.run(["git", "reset", "HEAD", file_path], cwd=os.getcwd(), check=True)
+            except subprocess.CalledProcessError as e:
+                messagebox.showerror("Errore", f"Errore unstage {file_path}: {e}")
+        self.refresh_git_status()
 
 
 def main():
