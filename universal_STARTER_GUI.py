@@ -1805,7 +1805,7 @@ except Exception as e:
     def parse_git_log(self):
         """Parse git log for commit graph."""
         try:
-            result = subprocess.run(["git", "log", "--pretty=format:%H,%s,%p", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
+            result = subprocess.run(["git", "log", "--pretty=format:%H|%s|%p", "--all", "-10"], capture_output=True, text=True, cwd=os.getcwd())
             print(f"Git log result: {result.returncode}, stdout: '{result.stdout[:100]}...', stderr: '{result.stderr}'")
             if result.returncode == 0:
                 commits = []
@@ -1813,7 +1813,7 @@ except Exception as e:
                 y = 20
                 for line in lines:
                     if line:
-                        parts = line.split(',')
+                        parts = line.split('|')
                         if len(parts) >= 2:
                             hash_short = parts[0][:7]
                             msg = parts[1][:20]
