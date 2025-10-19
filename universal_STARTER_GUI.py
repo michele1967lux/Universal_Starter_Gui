@@ -1016,6 +1016,7 @@ class App(ctk.CTk):
 
         # Tab Git Status
         self.tabview.add("Git Status")
+        self.tabview._tabview.bind("<<NotebookTabChanged>>", self.on_tab_change)
         git_tab = self.tabview.tab("Git Status")
 
         # Header per git status
@@ -1078,18 +1079,6 @@ class App(ctk.CTk):
 
         # Start auto-refresh for git status
         self.start_git_auto_refresh()
-
-        # Start tab change monitoring
-        self.monitor_tab_changes()
-
-    def monitor_tab_changes(self):
-        """Monitor tab changes and refresh git status only when switching to Git Status tab."""
-        current = self.tabview.get()
-        if current != self.current_tab:
-            self.current_tab = current
-            if current == "Git Status":
-                self.refresh_git_status()
-        self.after(500, self.monitor_tab_changes)
 
     def on_tab_change(self, event):
         """Handle tab change to refresh git status when Git Status tab is selected."""
@@ -1889,8 +1878,14 @@ except Exception as e:
         self.git_graph_canvas.configure(scrollregion=(0, 0, max_x, scroll_max_y))
         print(f"Scroll region set to: (0, 0, {max_x}, {scroll_max_y})")
         self.git_graph_canvas.update_idletasks()
+        self.git_graph_canvas.yview_moveto(0.0)
+        self.git_graph_canvas.event_generate("<<Expose>>")
         self.git_graph_canvas.update()
         print("Canvas updated")
+        print(f"Canvas viewable: {self.git_graph_canvas.winfo_viewable()}")
+        print(f"Canvas item count: {len(self.git_graph_canvas.find_all())}")
+        self.tabview.update_idletasks()
+        self.tabview.update()
 
     def on_commit_click(self, commit):
         """Handle commit click."""
