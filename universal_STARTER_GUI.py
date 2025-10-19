@@ -1043,7 +1043,7 @@ class App(ctk.CTk):
         # Frame per canvas e scrollbar
         canvas_frame = ctk.CTkFrame(git_tab)
         canvas_frame.pack(pady=5, padx=10, fill="both", expand=True)
-        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, height=200, bg="gray20")
+        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, bg="gray20")
         scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.yview)
         self.git_graph_canvas.configure(yscrollcommand=scrollbar.set)
         self.git_graph_canvas.pack(side="left", fill="both", expand=True)
@@ -1861,6 +1861,7 @@ except Exception as e:
 
         # Update scroll region
         self.git_graph_canvas.configure(scrollregion=self.git_graph_canvas.bbox("all"))
+        self.git_graph_canvas.update_idletasks()
 
     def on_commit_click(self, commit):
         """Handle commit click."""
