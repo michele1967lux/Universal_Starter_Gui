@@ -909,6 +909,7 @@ class App(ctk.CTk):
         self.conda_exe = None  # Path to conda executable
         self.files = []  # List of {"name": str, "path": str, "process": subprocess.Popen, "status": str}
         self.config_file = "config_STARTER_GUI.json"
+        self.current_tab = None  # Track current tab for change detection
         
         # Setup GUI
         self.setup_gui()
@@ -1082,9 +1083,12 @@ class App(ctk.CTk):
         self.monitor_tab_changes()
 
     def monitor_tab_changes(self):
-        """Monitor tab changes and refresh git status if Git Status tab is selected."""
-        if self.tabview.get() == "Git Status":
-            self.refresh_git_status()
+        """Monitor tab changes and refresh git status only when switching to Git Status tab."""
+        current = self.tabview.get()
+        if current != self.current_tab:
+            self.current_tab = current
+            if current == "Git Status":
+                self.refresh_git_status()
         self.after(500, self.monitor_tab_changes)
 
     def on_tab_change(self, event):
@@ -1715,6 +1719,7 @@ except Exception as e:
         for widget in self.git_files_frame.winfo_children():
             widget.destroy()
         self.git_file_checkboxes = []
+        print("Cleared git_files_frame")
 
         # Get current branch
         try:
@@ -1731,13 +1736,16 @@ except Exception as e:
         # Get git status
         try:
             result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, cwd=os.getcwd())
+            print(f"Git status output: '{result.stdout.strip()}'")
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')
+                print(f"Parsed {len(lines)} status lines")
                 if lines == ['']:
                     # No changes
                     label = ctk.CTkLabel(self.git_files_frame, text="Nessun file modificato")
                     label.pack(pady=5)
                 else:
+                    file_count = 0
                     for line in lines:
                         if line:
                             status = line[:2]
@@ -1763,6 +1771,8 @@ except Exception as e:
                             indicator.pack(side="left", padx=5)
                             info = ctk.CTkLabel(frame, text=f"{file_path} ({status_text})", anchor="w")
                             info.pack(side="left", fill="x", expand=True)
+                            file_count += 1
+                    print(f"Added {file_count} file widgets")
             else:
                 label = ctk.CTkLabel(self.git_files_frame, text="Errore nel recupero status git")
                 label.pack(pady=5)
