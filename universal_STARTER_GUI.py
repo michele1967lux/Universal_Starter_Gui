@@ -1043,7 +1043,7 @@ class App(ctk.CTk):
         # Frame per canvas e scrollbar
         canvas_frame = ctk.CTkFrame(git_tab)
         canvas_frame.pack(pady=5, padx=10, fill="both", expand=True)
-        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, bg="gray20")
+        self.git_graph_canvas = tk.Canvas(canvas_frame, bg="gray20")
         scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.yview)
         self.git_graph_canvas.configure(yscrollcommand=scrollbar.set)
         self.git_graph_canvas.pack(side="left", fill="both", expand=True)
