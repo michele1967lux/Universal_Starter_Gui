@@ -1015,7 +1015,6 @@ class App(ctk.CTk):
 
         # Tab Git Status
         self.tabview.add("Git Status")
-        self.tabview.bind("<<NotebookTabChanged>>", self.on_tab_change)
         git_tab = self.tabview.tab("Git Status")
 
         # Header per git status
@@ -1078,6 +1077,15 @@ class App(ctk.CTk):
 
         # Start auto-refresh for git status
         self.start_git_auto_refresh()
+
+        # Start tab change monitoring
+        self.monitor_tab_changes()
+
+    def monitor_tab_changes(self):
+        """Monitor tab changes and refresh git status if Git Status tab is selected."""
+        if self.tabview.get() == "Git Status":
+            self.refresh_git_status()
+        self.after(500, self.monitor_tab_changes)
 
     def on_tab_change(self, event):
         """Handle tab change to refresh git status when Git Status tab is selected."""
