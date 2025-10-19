@@ -28,6 +28,7 @@ import shutil
 import tkinter.messagebox as messagebox
 import tkinter.simpledialog as simpledialog
 import psutil
+import textwrap
 
 
 def run_install_command(command: List[str], q: queue.Queue):
@@ -1368,14 +1369,15 @@ class App(ctk.CTk):
         # Frame per canvas e scrollbar
         self.git_canvas_frame = ctk.CTkFrame(git_tab)
 
-        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, bg="gray20", highlightthickness=0)
+        # CORREZIONE: Usa self.git_canvas_frame come genitore per i widget figli
+        self.git_graph_canvas = ctk.CTkCanvas(self.git_canvas_frame, bg="gray20", highlightthickness=0)
 
         # Scrollbar Verticale
-        v_scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.yview)
+        v_scrollbar = ctk.CTkScrollbar(self.git_canvas_frame, command=self.git_graph_canvas.yview)
         v_scrollbar.pack(side="right", fill="y")
 
         # Scrollbar Orizzontale
-        h_scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.xview, orientation="horizontal")
+        h_scrollbar = ctk.CTkScrollbar(self.git_canvas_frame, command=self.git_graph_canvas.xview, orientation="horizontal")
         h_scrollbar.pack(side="bottom", fill="x")
 
         self.git_graph_canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
@@ -2224,12 +2226,13 @@ except Exception as e:
             # Disegna il cerchio del commit
             self.git_graph_canvas.create_oval(x - 6, y - 6, x + 6, y + 6, fill=color, outline="white", width=2, tags=commit_tag)
 
-            # Aggiungi testo (hash e messaggio)
-            # Troncamento del messaggio per una UI più pulita
+            # Aggiungi testo (hash e messaggio) con textwrap per una migliore formattazione
             msg = commit['msg']
-            display_msg = (msg[:45] + '...') if len(msg) > 45 else msg
+            # Usa textwrap per troncare elegantemente il messaggio
+            wrapped_msg = textwrap.shorten(msg, width=45, placeholder="...")
+            display_text = f"{commit['hash'][:7]} - {wrapped_msg}"
 
-            self.git_graph_canvas.create_text(x + 15, y, anchor="w", text=f"{commit['hash'][:7]} - {display_msg}", fill="white", tags=commit_tag)
+            self.git_graph_canvas.create_text(x + 15, y, anchor="w", text=display_text, fill="white", tags=commit_tag)
 
             # Rendi il commit cliccabile
             self.git_graph_canvas.tag_bind(commit_tag, "<Button-1>", lambda e, c=commit: self.on_commit_click(c))
@@ -2370,7 +2373,7 @@ except Exception as e:
         if operation_name == "refresh":
             # I dati sono stati caricati in background, ora disegna la UI
             self.refresh_git_status(result)
-            self.after(1000, lambda: self._reset_git_ui_state())
+            self.after(1000, lambda: self._reset_git_ui_state(result))  # Passa i dati
             return
 
         # Gestisci il caso speciale di resume che restituisce 3 valori
@@ -2445,23 +2448,32 @@ except Exception as e:
         for btn in buttons:
             btn.configure(state=state)
 
-    def _reset_git_ui_state(self):
+    def _reset_git_ui_state(self, data: Optional[Dict] = None):
         """Resetta l'interfaccia utente Git e aggiorna lo stato dei pulsanti in base al contesto."""
         self.git_progress_bar.set(0)
-        self.git_status_label.configure(text="", text_color="white")
+        self.git_status_label.configure(text="")
         self.git_cancel_btn.configure(state="disabled")
 
-        if self.git_manager.is_git_repo():
+        is_repo = data["is_repo"] if data else self.git_manager.is_git_repo()
+
+        if is_repo:
             self._set_git_buttons_state("normal")
 
             # Logica di abilitazione dinamica
-            _, _, op = self.git_manager.resume_operation()
-            if not op:
-                self.resume_btn.configure(state="disabled")
+            # Usa i dati passati se disponibili, altrimenti esegui una chiamata leggera
+            if data:
+                # Controlla se c'è un'operazione da riprendere (simulato, dato che non è nei dati)
+                _, _, op = self.git_manager.resume_operation()
+                if not op:
+                    self.resume_btn.configure(state="disabled")
 
-            staged_files = [fi for fi in self.git_manager.get_status() if fi['staged'] != 'none']
-            if not staged_files:
-                self.commit_btn.configure(state="disabled")
+                # Controlla se ci sono file in stage
+                staged_files = [f for f in data["status_files"] if f['staged'] != 'none']
+                if not staged_files:
+                    self.commit_btn.configure(state="disabled")
+            else:
+                # Fallback per chiamate non provenienti da un refresh completo
+                self._set_git_buttons_state("normal")
         else:
             self._set_git_buttons_state("disabled")
 
