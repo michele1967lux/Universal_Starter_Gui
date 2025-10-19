@@ -1063,6 +1063,108 @@ class GitManager:
         ret, out, err = self._run_git_command(["cherry-pick", commit_hash])
         return ret == 0, out if ret == 0 else err
 
+    def merge(self, branch_name: str) -> Tuple[bool, str]:
+        """Esegue il merge di un branch in quello corrente."""
+        ret, out, err = self._run_git_command(["merge", branch_name])
+        return ret == 0, out if ret == 0 else err
+
+    def revert_commit(self, commit_hash: str) -> Tuple[bool, str]:
+        """Esegue il revert di un commit specifico."""
+        ret, out, err = self._run_git_command(["revert", "--no-edit", commit_hash])
+        return ret == 0, out if ret == 0 else err
+
+    def resume_operation(self) -> Tuple[bool, str, str]:
+        """Tenta di riprendere un'operazione interrotta (merge/rebase)."""
+        if (Path(self.repo_path) / ".git" / "MERGE_HEAD").exists():
+            cmd = ["merge", "--continue"]
+            op = "Merge"
+        elif (Path(self.repo_path) / ".git" / "rebase-apply").exists():
+            cmd = ["rebase", "--continue"]
+            op = "Rebase"
+        else:
+            return False, "Nessuna operazione da riprendere", ""
+
+        ret, out, err = self._run_git_command(cmd)
+        return ret == 0, out if ret == 0 else err, op
+
+    def get_all_refresh_data(self, max_commits=50) -> Dict:
+        """
+        Raccoglie tutti i dati necessari per un refresh della UI in un'unica operazione.
+        Questa funzione è pensata per essere eseguita in un thread separato.
+        """
+        if not self.is_git_repo():
+            return {"is_repo": False}
+
+        status_files = self.get_status()
+        commits, nodes_map = self.get_commit_graph_data(max_commits)
+        current_branch = self.get_current_branch()
+
+        return {
+            "is_repo": True,
+            "branch": current_branch,
+            "status_files": status_files,
+            "commits": commits,
+            "nodes_map": nodes_map,
+        }
+
+
+class GitOperationManager:
+    """Gestisce operazioni Git asincrone per evitare blocco della GUI."""
+
+    def __init__(self, git_manager, ui_callback):
+        self.git_manager = git_manager
+        self.ui_callback = ui_callback
+        self.active_operations = set()
+        self.operation_queue = queue.Queue()
+        self.cancel_requested = False
+        self.cancel_requested_for = None  # Traccia quale operazione è stata richiesta per cancellazione
+
+    def execute_async(self, operation_name: str, operation_func, *args, **kwargs):
+        """Esegue un'operazione Git in un thread separato."""
+        if operation_name in self.active_operations:
+            # Operazione già in corso, ignora
+            return
+
+        self.active_operations.add(operation_name)
+        self.cancel_requested = False
+
+        # Notifica UI che l'operazione è iniziata
+        self.ui_callback.on_git_operation_started(operation_name)
+
+        def worker():
+            try:
+                result = operation_func(*args, **kwargs)
+
+                # Se l'operazione è stata annullata, chiama la callback di annullamento, altrimenti quella di completamento
+                if self.cancel_requested and self.cancel_requested_for == operation_name:
+                    self.ui_callback.after(0, lambda: self.ui_callback.on_git_operation_cancelled(operation_name))
+                else:
+                    self.ui_callback.after(0, lambda: self.ui_callback.on_git_operation_completed(operation_name, result))
+
+            except Exception as e:
+                # Se c'è un errore, gestiscilo, indipendentemente dalla cancellazione
+                self.ui_callback.after(0, lambda: self.ui_callback.on_git_operation_error(operation_name, str(e)))
+            finally:
+                self.active_operations.discard(operation_name)
+                if self.cancel_requested_for == operation_name:
+                    self.cancel_requested = False
+                    self.cancel_requested_for = None
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+    def cancel_operation(self, operation_name: str):
+        """Richiesta cancellazione operazione con feedback onesto."""
+        if operation_name in self.active_operations:
+            self.cancel_requested = True
+            self.cancel_requested_for = operation_name
+            self.ui_callback.on_git_operation_cancel_requested(operation_name)
+            # NON chiamare on_git_operation_cancelled immediatamente - aspetta che termini naturalmente
+
+    def is_operation_active(self, operation_name: str) -> bool:
+        """Verifica se un'operazione è attualmente attiva."""
+        return operation_name in self.active_operations
+
 
 class App(ctk.CTk):
     """Main application window."""
@@ -1085,6 +1187,9 @@ class App(ctk.CTk):
 
         # NUOVA RIGA: Inizializza il GitManager
         self.git_manager = GitManager(os.getcwd())
+
+        # Inizializza il GitOperationManager per operazioni asincrone
+        self.git_op_manager = GitOperationManager(self.git_manager, self)
 
         # Setup GUI
         self.setup_gui()
@@ -1197,8 +1302,15 @@ class App(ctk.CTk):
         git_header = ctk.CTkFrame(git_tab)
         git_header.pack(pady=5, padx=10, fill="x")
         self.git_branch_label = ctk.CTkLabel(git_header, text="Branch: N/A")
-        self.git_branch_label.pack(side="left")
-        refresh_git_btn = ctk.CTkButton(git_header, text="Aggiorna", command=self.refresh_git_status)
+        self.git_branch_label.pack(side="left", padx=(0, 10))
+
+        # Configurazione limite commit
+        ctk.CTkLabel(git_header, text="Commit da mostrare:").pack(side="left")
+        self.git_commit_limit_entry = ctk.CTkEntry(git_header, width=50)
+        self.git_commit_limit_entry.insert(0, "50")
+        self.git_commit_limit_entry.pack(side="left", padx=5)
+
+        refresh_git_btn = ctk.CTkButton(git_header, text="Aggiorna", command=self.refresh_git_status_async)
         refresh_git_btn.pack(side="right")
 
         # Scrollable frame per file git
@@ -1219,11 +1331,19 @@ class App(ctk.CTk):
         # Frame per canvas e scrollbar
         canvas_frame = ctk.CTkFrame(git_tab)
         canvas_frame.pack(pady=5, padx=10, fill="both", expand=True)
-        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, bg="gray20")
-        scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.yview)
-        self.git_graph_canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.git_graph_canvas = ctk.CTkCanvas(canvas_frame, bg="gray20", highlightthickness=0)
+
+        # Scrollbar Verticale
+        v_scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.yview)
+        v_scrollbar.pack(side="right", fill="y")
+
+        # Scrollbar Orizzontale
+        h_scrollbar = ctk.CTkScrollbar(canvas_frame, command=self.git_graph_canvas.xview, orientation="horizontal")
+        h_scrollbar.pack(side="bottom", fill="x")
+
+        self.git_graph_canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
         self.git_graph_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
 
         # Pulsanti azioni git
         actions_frame = ctk.CTkFrame(git_tab)
@@ -1238,6 +1358,20 @@ class App(ctk.CTk):
         self.revert_btn.pack(side="left", padx=5)
         self.resume_btn = ctk.CTkButton(actions_frame, text="Resume", command=self.git_resume, state="disabled")
         self.resume_btn.pack(side="left", padx=5)
+
+        # Indicatori di progresso e stato per operazioni Git
+        self.git_progress_frame = ctk.CTkFrame(git_tab)
+        self.git_progress_frame.pack(pady=5, padx=10, fill="x")
+
+        self.git_status_label = ctk.CTkLabel(self.git_progress_frame, text="", font=("Arial", 10))
+        self.git_status_label.pack(side="left", padx=5)
+
+        self.git_progress_bar = ctk.CTkProgressBar(self.git_progress_frame, width=200)
+        self.git_progress_bar.pack(side="right", padx=5)
+        self.git_progress_bar.set(0)  # Inizialmente nascosto
+
+        self.git_cancel_btn = ctk.CTkButton(self.git_progress_frame, text="Annulla", command=self.cancel_git_operation, state="disabled")
+        self.git_cancel_btn.pack(side="right", padx=5)
 
         # Aggiungi tooltip
         self.create_tooltip(self.commit_btn, "Crea un nuovo commit con i file attualmente staged.")
@@ -1314,7 +1448,7 @@ Azioni Git:
 # Fine della funzione setup_gui
 
         # Inizializza status git
-        self.refresh_git_status()
+        self.refresh_git_status_async()
 
         # Start auto-refresh for git status
         self.start_git_auto_refresh()
@@ -1322,7 +1456,7 @@ Azioni Git:
     def on_tab_change(self):
         """Handle tab change to refresh git status when Git Status tab is selected."""
         if self.tabview.get() == "Git Status":
-            self.refresh_git_status()
+            self.refresh_git_status_async()
 
     def create_tooltip(self, widget, text):
         """Create a simple tooltip for a widget."""
@@ -1941,28 +2075,38 @@ except Exception as e:
         except Exception as e:
             print(f"Error loading config: {e}")
 
-    def refresh_git_status(self):
-        """Refresh the git status display using GitManager."""
+    def refresh_git_status_async(self):
+        """Esegue il refresh completo dei dati Git in modo asincrono."""
+        if self.git_op_manager.is_operation_active("refresh"):
+            return  # Evita refresh multipli
+
+        try:
+            limit = int(self.git_commit_limit_entry.get())
+        except (ValueError, TypeError):
+            limit = 50  # Fallback
+
+        # Esegui la vera funzione di caricamento dati in background
+        self.git_op_manager.execute_async("refresh", self.git_manager.get_all_refresh_data, max_commits=limit)
+
+    def refresh_git_status(self, data: Dict):
+        """
+        DISEGNA lo stato di Git sulla UI usando i dati pre-caricati.
+        Questa funzione è veloce e non bloccante.
+        """
         # Clear existing file widgets
         for widget in self.git_files_frame.winfo_children():
             widget.destroy()
         self.git_file_checkboxes = []
 
-        if not self.git_manager.is_git_repo():
+        if not data["is_repo"]:
             self.git_branch_label.configure(text="Branch: N/A (non è un repository git)")
             self.git_graph_canvas.delete("all")
             self.git_graph_canvas.create_text(200, 50, text="Nessun repository Git trovato in questa cartella.", fill="white")
-            # Disabilita i pulsanti
-            self.commit_btn.configure(state="disabled")
-            self.push_btn.configure(state="disabled")
             return
 
-        # Get current branch
-        branch = self.git_manager.get_current_branch()
-        self.git_branch_label.configure(text=f"Branch: {branch}")
+        self.git_branch_label.configure(text=f"Branch: {data['branch']}")
 
-        # Get git status
-        status_files = self.git_manager.get_status()
+        status_files = data["status_files"]
         if not status_files:
             label = ctk.CTkLabel(self.git_files_frame, text="Nessun file modificato. Working tree pulito.")
             label.pack(pady=5)
@@ -1984,12 +2128,13 @@ except Exception as e:
                 info.pack(side="left", fill="x", expand=True)
 
         # Draw commit graph
-        commits, nodes_map = self.git_manager.get_commit_graph_data()
-        self.draw_commit_graph(commits, nodes_map)
+        self.draw_commit_graph(data["commits"], data["nodes_map"])
 
-        # Abilita i pulsanti
-        self.commit_btn.configure(state="normal")
-        self.push_btn.configure(state="normal")
+        # Abilita i pulsanti se non ci sono operazioni in corso
+        if not any(self.git_op_manager.is_operation_active(op) for op in ["checkout", "commit", "push", "merge", "revert", "resume", "stage", "unstage"]):
+            self._set_git_buttons_state("normal")
+        else:
+            self._set_git_buttons_state("disabled")
 
     def start_git_auto_refresh(self):
         """Start automatic refresh of git status every 30 seconds."""
@@ -1997,9 +2142,9 @@ except Exception as e:
 
     def auto_refresh_git_status(self):
         """Auto-refresh git status if git tab is active."""
-        # Check if git tab is the current tab
-        if self.tabview.get() == "Git Status":
-            self.refresh_git_status()
+        # Check if git tab is the current tab and no operations are active
+        if self.tabview.get() == "Git Status" and not self.git_op_manager.active_operations:
+            self.refresh_git_status_async()
         # Schedule next refresh
         self.after(30000, self.auto_refresh_git_status)
 
@@ -2039,7 +2184,11 @@ except Exception as e:
             self.git_graph_canvas.create_oval(x - 6, y - 6, x + 6, y + 6, fill=color, outline="white", width=2, tags=commit_tag)
 
             # Aggiungi testo (hash e messaggio)
-            self.git_graph_canvas.create_text(x + 15, y, anchor="w", text=f"{commit['hash'][:7]} - {commit['msg']}", fill="white", tags=commit_tag)
+            # Troncamento del messaggio per una UI più pulita
+            msg = commit['msg']
+            display_msg = (msg[:45] + '...') if len(msg) > 45 else msg
+
+            self.git_graph_canvas.create_text(x + 15, y, anchor="w", text=f"{commit['hash'][:7]} - {display_msg}", fill="white", tags=commit_tag)
 
             # Rendi il commit cliccabile
             self.git_graph_canvas.tag_bind(commit_tag, "<Button-1>", lambda e, c=commit: self.on_commit_click(c))
@@ -2048,8 +2197,8 @@ except Exception as e:
         self.git_graph_canvas.update_idletasks()
         bbox = self.git_graph_canvas.bbox("all")
         if bbox:
-            # Aggiungi un po' di padding
-            self.git_graph_canvas.configure(scrollregion=(bbox[0]-20, bbox[1]-20, bbox[2]+200, bbox[3]+20))
+            # Aggiungi padding per non tagliare il testo
+            self.git_graph_canvas.configure(scrollregion=(bbox[0]-20, bbox[1]-20, bbox[2]+300, bbox[3]+20))
 
     def on_commit_click(self, commit: Dict):
         """Handle commit click with a context menu."""
@@ -2070,146 +2219,74 @@ except Exception as e:
         menu.post(self.winfo_pointerx(), self.winfo_pointery())
 
     def git_checkout_commit(self, commit_hash):
-        """Checkout to commit."""
-        try:
-            result = subprocess.run(["git", "checkout", commit_hash], cwd=os.getcwd(), capture_output=True, text=True)
-            if result.returncode == 0:
-                messagebox.showinfo("Successo", f"Checkout a {commit_hash[:7]}")
-                self.refresh_git_status()
-            else:
-                messagebox.showerror("Errore", result.stderr)
-        except Exception as e:
-            messagebox.showerror("Errore", str(e))
+        """Checkout to a specific commit asynchronously."""
+        self.git_op_manager.execute_async("checkout", self.git_manager.checkout, commit_hash)
 
 
 
     def git_commit(self):
-        # Check if there are staged files
-        try:
-            staged_result = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=os.getcwd(), capture_output=True, text=True)
-            if staged_result.returncode != 0 or not staged_result.stdout.strip():
-                messagebox.showinfo("Info", "Nessun file staged. Seleziona e stage i file da committare.")
-                return
-        except Exception as e:
-            messagebox.showerror("Errore", f"Errore controllo staged: {e}")
+        """Commit staged files asynchronously."""
+        staged_files = [fi for fi in self.git_manager.get_status() if fi['staged'] != 'none']
+        if not staged_files:
+            messagebox.showinfo("Info", "Nessun file staged. Seleziona e stage i file da committare.")
             return
 
-        msg = simpledialog.askstring("Commit", "Messaggio commit:")
+        msg = simpledialog.askstring("Commit", "Messaggio di commit:")
         if msg:
-            try:
-                result = subprocess.run(["git", "commit", "-m", msg], cwd=os.getcwd(), capture_output=True, text=True)
-                if result.returncode == 0:
-                    messagebox.showinfo("Successo", "Commit effettuato")
-                    self.refresh_git_status()
-                else:
-                    messagebox.showerror("Errore", result.stderr)
-            except Exception as e:
-                messagebox.showerror("Errore", str(e))
+            self.git_op_manager.execute_async("commit", self.git_manager.commit, msg)
 
     def git_push(self):
-        try:
-            result = subprocess.run(["git", "push"], cwd=os.getcwd(), capture_output=True, text=True)
-            if result.returncode == 0:
-                messagebox.showinfo("Successo", "Push effettuato")
-                self.refresh_git_status()
-            else:
-                messagebox.showerror("Errore", result.stderr)
-        except Exception as e:
-            messagebox.showerror("Errore", str(e))
+        """Push commits asynchronously."""
+        self.git_op_manager.execute_async("push", self.git_manager.push)
 
     def git_merge(self):
-        branch = simpledialog.askstring("Merge", "Branch da mergiare:")
+        """Merge a branch asynchronously."""
+        branch = simpledialog.askstring("Merge", "Inserisci il nome del branch da mergiare:")
         if branch:
-            try:
-                result = subprocess.run(["git", "merge", branch], cwd=os.getcwd(), capture_output=True, text=True)
-                if result.returncode == 0:
-                    messagebox.showinfo("Successo", "Merge effettuato")
-                    self.refresh_git_status()
-                else:
-                    messagebox.showerror("Errore", result.stderr)
-            except Exception as e:
-                messagebox.showerror("Errore", str(e))
+            self.git_op_manager.execute_async("merge", self.git_manager.merge, branch)
 
     def git_revert(self):
-        commit = simpledialog.askstring("Revert", "Commit da revertire:")
-        if commit:
-            try:
-                result = subprocess.run(["git", "revert", commit], cwd=os.getcwd(), capture_output=True, text=True)
-                if result.returncode == 0:
-                    messagebox.showinfo("Successo", "Revert effettuato")
-                    self.refresh_git_status()
-                else:
-                    messagebox.showerror("Errore", result.stderr)
-            except Exception as e:
-                messagebox.showerror("Errore", str(e))
+        """Revert a commit asynchronously."""
+        commit_hash = simpledialog.askstring("Revert", "Inserisci l'hash del commit da annullare:")
+        if commit_hash:
+            self.git_op_manager.execute_async("revert", self.git_manager.revert_commit, commit_hash)
 
     def git_resume(self):
-        # Check if in merge
-        if os.path.exists(".git/MERGE_HEAD"):
-            cmd = ["git", "merge", "--continue"]
-        elif os.path.exists(".git/rebase-apply"):
-            cmd = ["git", "rebase", "--continue"]
-        else:
-            messagebox.showinfo("Info", "Nessuna operazione da riprendere")
-            return
-        try:
-            result = subprocess.run(cmd, cwd=os.getcwd(), capture_output=True, text=True)
-            if result.returncode == 0:
-                messagebox.showinfo("Successo", "Operazione ripresa")
-                self.refresh_git_status()
-            else:
-                messagebox.showerror("Errore", result.stderr)
-        except Exception as e:
-            messagebox.showerror("Errore", str(e))
+        """Resume a git operation asynchronously."""
+        self.git_op_manager.execute_async("resume", self.git_manager.resume_operation)
 
     def stage_selected_files(self):
-        """Stage selected files using GitManager."""
+        """Stage selected files asynchronously."""
         selected = [fp for cb, fp in self.git_file_checkboxes if cb.get()]
         if not selected:
             messagebox.showinfo("Info", "Nessun file selezionato")
             return
 
-        success, message = self.git_manager.stage(selected)
-        if not success:
-            messagebox.showerror("Errore", f"Errore durante lo staging:\n{message}")
-        self.refresh_git_status()
+        self.git_op_manager.execute_async("stage", self.git_manager.stage, selected)
 
     def unstage_selected_files(self):
-        """Unstage selected files using GitManager."""
+        """Unstage selected files asynchronously."""
         selected = [fp for cb, fp in self.git_file_checkboxes if cb.get()]
         if not selected:
             messagebox.showinfo("Info", "Nessun file selezionato")
             return
 
-        success, message = self.git_manager.unstage(selected)
-        if not success:
-            messagebox.showerror("Errore", f"Errore durante l'unstage:\n{message}")
-        self.refresh_git_status()
+        self.git_op_manager.execute_async("unstage", self.git_manager.unstage, selected)
 
     def git_create_branch_from(self, commit_hash: str):
-        """Crea un nuovo branch da un commit specifico."""
+        """Crea un nuovo branch da un commit specifico (asincrono)."""
         branch_name = simpledialog.askstring("Crea Branch", "Inserisci il nome del nuovo branch:")
         if not branch_name:
             return
 
-        success, message = self.git_manager.create_branch(branch_name, commit_hash)
-        if success:
-            messagebox.showinfo("Successo", f"Branch '{branch_name}' creato con successo.")
-            self.refresh_git_status()
-        else:
-            messagebox.showerror("Errore", message)
+        self.git_op_manager.execute_async("create_branch", self.git_manager.create_branch, branch_name, commit_hash)
 
     def git_cherry_pick_commit(self, commit_hash: str):
-        """Esegue un cherry-pick di un commit."""
+        """Esegue un cherry-pick di un commit (asincrono)."""
         if not messagebox.askyesno("Conferma Cherry-Pick", f"Sei sicuro di voler fare il cherry-pick del commit {commit_hash[:7]} sul branch corrente?"):
             return
 
-        success, message = self.git_manager.cherry_pick(commit_hash)
-        if success:
-            messagebox.showinfo("Successo", "Cherry-pick completato.")
-            self.refresh_git_status()
-        else:
-            messagebox.showerror("Errore", f"Cherry-pick fallito:\n{message}")
+        self.git_op_manager.execute_async("cherry_pick", self.git_manager.cherry_pick, commit_hash)
 
     # Assicurati di avere anche una funzione per la clipboard
     def copy_to_clipboard(self, text: str):
@@ -2217,6 +2294,126 @@ except Exception as e:
         self.clipboard_clear()
         self.clipboard_append(text)
         self.update() # Necessario su alcuni sistemi
+
+    # ==================== GESTIONE OPERAZIONI GIT ASINCRONE ====================
+
+    def on_git_operation_started(self, operation_name: str):
+        """Callback chiamato quando un'operazione Git inizia."""
+        # Disabilita tutti i pulsanti Git
+        self._set_git_buttons_state("disabled")
+
+        if operation_name == "refresh":
+            # Refresh speciale: solo indicatore leggero, no barra progresso completa
+            self.git_status_label.configure(text="Aggiornamento in corso...")
+            self.git_cancel_btn.configure(state="disabled")  # No cancellazione per refresh
+        else:
+            # Mostra progresso completo
+            self.git_progress_bar.set(0.1)  # Inizio progresso
+            self.git_status_label.configure(text=f"Operazione '{operation_name}' in corso...")
+            self.git_cancel_btn.configure(state="normal")
+
+        # Log
+        log_queue.put(f"[GIT] Avviata operazione: {operation_name}\n")
+
+    def on_git_operation_completed(self, operation_name: str, result):
+        """Callback chiamato quando un'operazione Git è completata."""
+        if operation_name == "refresh":
+            # I dati sono stati caricati in background, ora disegna la UI
+            self.refresh_git_status(result)
+            self.after(1000, lambda: self._reset_git_ui_state())
+            return
+
+        # Gestisci il caso speciale di resume che restituisce 3 valori
+        if operation_name == "resume" and len(result) == 3:
+            success, message, op = result
+            op_name = f"Ripresa {op}"
+        else:
+            success, message = result
+            op_name = operation_name
+
+        # Completa progresso
+        self.git_progress_bar.set(1.0)
+
+        if success:
+            self.git_status_label.configure(text=f"✓ {op_name} completato", text_color="green")
+            log_queue.put(f"[GIT] Operazione '{op_name}' completata con successo\n")
+            # Aggiorna status Git dopo un breve delay
+            self.after(500, self.refresh_git_status_async)
+        else:
+            self.git_status_label.configure(text=f"✗ {op_name} fallito", text_color="red")
+            log_queue.put(f"[GIT ERROR] {op_name} fallito: {message}\n")
+            messagebox.showerror(f"Errore {op_name}", message)
+
+        # Riabilita pulsanti dopo un delay
+        self.after(2000, lambda: self._reset_git_ui_state())
+
+    def on_git_operation_error(self, operation_name: str, error_msg: str):
+        """Callback chiamato quando un'operazione Git genera un errore."""
+        self.git_progress_bar.set(0)
+        self.git_status_label.configure(text=f"✗ Errore in {operation_name}", text_color="red")
+        log_queue.put(f"[GIT ERROR] {operation_name} errore: {error_msg}\n")
+        messagebox.showerror(f"Errore {operation_name}", error_msg)
+
+        self.after(2000, lambda: self._reset_git_ui_state())
+
+    def on_git_operation_cancel_requested(self, operation_name: str):
+        """Callback chiamato quando la cancellazione è stata richiesta."""
+        self.git_status_label.configure(text=f"Annullamento di '{operation_name}' richiesto...", text_color="orange")
+        self.git_cancel_btn.configure(state="disabled")
+        log_queue.put(f"[GIT] Richiesta di annullamento per '{operation_name}'. L'operazione terminerà a breve.\n")
+        # La UI si resetterà quando il worker thread terminerà e chiamerà la callback appropriata
+
+    def on_git_operation_cancelled(self, operation_name: str):
+        """Callback chiamato quando un'operazione è terminata dopo una richiesta di annullamento."""
+        self.git_status_label.configure(text=f"✓ Operazione '{operation_name}' terminata e annullata.", text_color="orange")
+        log_queue.put(f"[GIT] Operazione '{operation_name}' terminata dopo richiesta di annullamento.\n")
+        self.after(2000, self._reset_git_ui_state)
+
+    def cancel_git_operation(self):
+        """Annulla l'operazione Git corrente in modo robusto."""
+        # Usa il manager per ottenere le operazioni attive invece di lista hardcoded
+        active_operations = list(self.git_op_manager.active_operations)
+
+        if not active_operations:
+            # Nessuna operazione attiva
+            return
+
+        if len(active_operations) > 1:
+            # Multiple operazioni attive (non dovrebbe accadere, ma gestisci)
+            log_queue.put(f"[GIT WARNING] Multiple operazioni attive: {active_operations}\n")
+
+        # Cancella la prima operazione attiva
+        operation_to_cancel = active_operations[0]
+        self.git_op_manager.cancel_operation(operation_to_cancel)
+
+    def _set_git_buttons_state(self, state: str):
+        """Imposta lo stato di tutti i pulsanti Git."""
+        buttons = [
+            self.commit_btn, self.push_btn, self.merge_btn, self.revert_btn, self.resume_btn,
+            self.stage_selected_btn, self.unstage_selected_btn
+        ]
+        for btn in buttons:
+            btn.configure(state=state)
+
+    def _reset_git_ui_state(self):
+        """Resetta l'interfaccia utente Git e aggiorna lo stato dei pulsanti in base al contesto."""
+        self.git_progress_bar.set(0)
+        self.git_status_label.configure(text="", text_color="white")
+        self.git_cancel_btn.configure(state="disabled")
+
+        if self.git_manager.is_git_repo():
+            self._set_git_buttons_state("normal")
+
+            # Logica di abilitazione dinamica
+            _, _, op = self.git_manager.resume_operation()
+            if not op:
+                self.resume_btn.configure(state="disabled")
+
+            staged_files = [fi for fi in self.git_manager.get_status() if fi['staged'] != 'none']
+            if not staged_files:
+                self.commit_btn.configure(state="disabled")
+        else:
+            self._set_git_buttons_state("disabled")
 
 
 def main():
