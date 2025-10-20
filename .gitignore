@@ -1,8 +1,12 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+*.pyc
+
+# Distribution / packaging
 build/
 develop-eggs/
 dist/
@@ -19,6 +23,8 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Virtual environments
 .venv
 env/
 venv/
@@ -26,6 +32,36 @@ ENV/
 env.bak/
 venv.bak/
 .venvs/
+
+# Configuration files
 config.json
+config_STARTER_GUI.json
+
+# Logs
 *.log
+
+# OS specific
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Backup files
+*.bak
+*.backup
+*~

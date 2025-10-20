@@ -1,5 +1,11 @@
 # Manuale d'Uso - Universal Starter GUI
 
+> **📚 Nota**: Per una panoramica generale e istruzioni di installazione in italiano e inglese, consulta il [README.md](README.md) principale.
+
+> **💡 Suggerimento**: Se stai cercando una guida rapida, la sezione italiana nel README.md potrebbe essere sufficiente. Questo manuale fornisce istruzioni dettagliate e approfondite.
+
+---
+
 ## Indice
 1. [Introduzione](#introduzione)
 2. [Requisiti di Sistema](#requisiti-di-sistema)
@@ -8,9 +14,10 @@
 5. [Interfaccia Principale](#interfaccia-principale)
 6. [Gestione degli Ambienti](#gestione-degli-ambienti)
 7. [Gestione dei File](#gestione-dei-file)
-8. [Configurazione e Salvataggio](#configurazione-e-salvataggio)
-9. [Risoluzione dei Problemi](#risoluzione-dei-problemi)
-10. [Domande Frequenti (FAQ)](#domande-frequenti-faq)
+8. [Integrazione Git](#integrazione-git)
+9. [Configurazione e Salvataggio](#configurazione-e-salvataggio)
+10. [Risoluzione dei Problemi](#risoluzione-dei-problemi)
+11. [Domande Frequenti (FAQ)](#domande-frequenti-faq)
 
 ---
 
@@ -192,6 +199,178 @@ Cliccare sul pulsante **🗑** (cestino) accanto al file da rimuovere.
 
 ---
 
+## Integrazione Git
+
+### Panoramica
+
+Universal Starter GUI include un client Git integrato completo che permette di gestire repository Git direttamente dall'interfaccia. Questa funzionalità è particolarmente utile per sviluppatori che lavorano su più progetti e vogliono mantenere il controllo di versione senza dover lasciare l'applicazione.
+
+### Accesso alle Funzionalità Git
+
+Per accedere alle funzionalità Git:
+1. Clicca sulla tab **"Git Status"** nella finestra principale
+2. Se la cartella corrente non è un repository Git, vedrai un pulsante per inizializzarne uno
+3. Una volta in un repository valido, vedrai il grafico commit e i controlli Git
+
+### Grafico Commit Visuale
+
+Il grafico commit mostra la cronologia del repository in modo visuale:
+
+- **Cerchi colorati**: Rappresentano singoli commit
+- **Linee**: Mostrano le relazioni parent-child tra commit
+- **Colonne**: Separano diversi branch per chiarezza visiva
+- **Testo**: Mostra hash abbreviato del commit e messaggio
+
+#### Interazione con i Commit
+
+**Click Singolo**: Clicca su un commit per aprire un menu contestuale con azioni:
+- **Checkout a [hash]**: Sposta HEAD a quel commit (stato detached)
+- **Crea branch da [hash]**: Crea un nuovo branch da quel punto
+- **Cherry-pick [hash]**: Applica le modifiche di quel commit sul branch corrente
+- **Copia Hash completo**: Copia l'hash SHA completo negli appunti
+- **Mostra Dettagli**: Visualizza informazioni dettagliate sul commit
+
+### Gestione File e Staging
+
+#### Visualizzazione Stato File
+
+La sezione superiore della tab Git Status mostra tutti i file modificati:
+- **Staged**: File pronti per essere committati (verde)
+- **Unstaged**: File modificati ma non ancora staged (giallo)
+- **Untracked**: File nuovi non tracciati da Git (rosso)
+
+#### Operazioni di Staging
+
+1. **Stage Selezionati**:
+   - Seleziona i file usando le checkbox
+   - Clicca "Stage Selezionati"
+   - I file si sposteranno nell'area di staging
+
+2. **Unstage Selezionati**:
+   - Seleziona i file staged
+   - Clicca "Unstage Selezionati"
+   - I file verranno rimossi dall'area di staging
+
+### Operazioni Git Principali
+
+#### Commit
+
+1. Assicurati di aver staged i file desiderati
+2. Clicca sul pulsante **"Commit"**
+3. Inserisci un messaggio di commit descrittivo
+4. Conferma per creare il commit
+
+**Suggerimento**: Scrivi messaggi di commit chiari che descrivano cosa è stato cambiato e perché.
+
+#### Push
+
+1. Assicurati di aver committato le tue modifiche
+2. Clicca sul pulsante **"Push"**
+3. I commit locali verranno inviati al repository remoto
+4. Vedrai un messaggio di conferma o errore
+
+#### Merge
+
+1. Clicca sul pulsante **"Merge"**
+2. Inserisci il nome del branch da mergiare nel branch corrente
+3. Conferma l'operazione
+4. Se ci sono conflitti, dovrai risolverli manualmente
+
+#### Crea Branch
+
+**Dal pulsante principale**:
+1. Clicca **"Crea Branch"**
+2. Inserisci il nome del nuovo branch
+3. Il branch verrà creato dal punto corrente (HEAD)
+
+**Dal menu contestuale commit**:
+1. Click destro su un commit specifico
+2. Seleziona "Crea branch da [hash]"
+3. Inserisci il nome del branch
+4. Il branch verrà creato da quel commit
+
+#### Revert
+
+1. Clicca sul pulsante **"Revert"**
+2. Inserisci l'hash del commit da annullare
+3. Conferma l'operazione
+4. Verrà creato un nuovo commit che annulla le modifiche
+
+**Nota**: Revert non modifica la cronologia, ma crea un nuovo commit.
+
+#### Resume
+
+Se un'operazione (merge/rebase) è stata interrotta:
+1. Risolvi i conflitti manualmente
+2. Clicca **"Resume"** per continuare l'operazione
+3. L'operazione verrà completata
+
+### Indicatori di Progresso
+
+Durante le operazioni Git:
+- **Barra di progresso**: Mostra lo stato dell'operazione
+- **Testo di stato**: Descrive cosa sta accadendo
+- **Pulsante Annulla**: Permette di cancellare operazioni lunghe (quando possibile)
+
+### Operazioni Asincrone
+
+Tutte le operazioni Git vengono eseguite in background:
+- **Nessun blocco UI**: L'interfaccia rimane reattiva
+- **Feedback visuale**: Indicatori di progresso chiari
+- **Gestione errori**: Messaggi di errore informativi
+- **Cancellazione**: Possibilità di annullare operazioni lunghe
+
+### Limiti e Configurazione
+
+#### Numero di Commit Visualizzati
+
+- **Default**: 50 commit
+- **Configurazione**: Modifica il valore nel campo "Commit da mostrare"
+- **Aggiorna**: Clicca "Aggiorna" per ricaricare con il nuovo limite
+
+#### Limitazioni
+
+- Le operazioni Git richiedono che Git sia installato e nel PATH
+- Alcuni comandi potrebbero richiedere privilegi amministratore
+- Le operazioni su repository molto grandi potrebbero richiedere tempo
+- Non tutte le funzionalità Git avanzate sono supportate dall'interfaccia
+
+### Risoluzione Problemi Git
+
+#### "Git non trovato"
+
+**Soluzione**:
+1. Verifica che Git sia installato: `git --version`
+2. Aggiungi Git al PATH di sistema
+3. Riavvia l'applicazione
+
+#### "Non è un repository Git"
+
+**Soluzione**:
+1. Naviga in una cartella che contiene un repository Git
+2. Oppure usa il pulsante "Inizializza Repository Qui"
+
+#### "Conflitti durante il merge"
+
+**Soluzione**:
+1. Risolvi i conflitti manualmente nei file
+2. Stage i file risolti
+3. Usa il pulsante "Resume" per completare il merge
+
+#### "Push rifiutato"
+
+**Possibili cause**:
+- Branch remoto ha commit che non hai localmente
+- Autenticazione fallita
+- Permessi insufficienti
+
+**Soluzione**:
+1. Esegui pull per sincronizzare
+2. Verifica le credenziali di autenticazione
+3. Controlla i permessi sul repository remoto
+
+---
+
 ## Configurazione e Salvataggio
 
 ### File di Configurazione
@@ -318,32 +497,106 @@ Al riavvio dell'applicazione, la configurazione viene caricata automaticamente d
 ### D: L'applicazione funziona su Raspberry Pi?
 **R**: Sì, se Python 3.9+ e le dipendenze sono installate. Le prestazioni dipendono dal modello.
 
+### D: Posso usare Git senza interfaccia grafica?
+**R**: Sì, puoi continuare a usare Git dalla riga di comando. L'integrazione Git nell'app è opzionale e lavora sullo stesso repository.
+
+### D: Cosa succede se cancello l'ambiente Conda base?
+**R**: L'ambiente "base" non viene mostrato nella lista per prevenire eliminazioni accidentali. Non è possibile eliminarlo dall'app.
+
+### D: Posso usare l'app per progetti non-Python?
+**R**: L'app è ottimizzata per Python, ma puoi aggiungere qualsiasi script eseguibile. Le funzionalità di ambiente sono specifiche per Python.
+
+### D: Come contribuisco al progetto?
+**R**: Vedi [CONTRIBUTING.md](CONTRIBUTING.md) per linee guida dettagliate. Accogliamo contributi di codice, documentazione e traduzioni!
+
 ---
 
 ## Supporto e Contatti
 
 Per segnalare bug, richiedere funzionalità o ottenere supporto:
-- **GitHub Issues**: https://github.com/mk4-67/UNIVERSAL-STARTER-GUI/issues
-- **Repository**: https://github.com/mk4-67/UNIVERSAL-STARTER-GUI
+- **GitHub Issues**: [github.com/michele1967lux/Universal_Starter_Gui/issues](https://github.com/michele1967lux/Universal_Starter_Gui/issues)
+- **Repository**: [github.com/michele1967lux/Universal_Starter_Gui](https://github.com/michele1967lux/Universal_Starter_Gui)
+- **Discussioni**: Usa le GitHub Discussions per domande generali
+
+### Come Supportare il Progetto
+
+Se trovi utile questo progetto, considera di:
+- ⭐ **Mettere una stella** al repository su GitHub
+- 🐛 **Segnalare bug** per migliorare la qualità
+- 💡 **Suggerire nuove funzionalità**
+- 🔧 **Contribuire** con codice o documentazione
+- 📖 **Migliorare la documentazione**
+- 🌍 **Tradurre** in altre lingue
 
 ---
 
 ## Licenza
 
-Questo progetto è distribuito sotto licenza MIT. Vedere il file LICENSE per i dettagli.
+Questo progetto è distribuito sotto **licenza MIT**. Vedere il file [LICENSE](LICENSE) per i dettagli.
+
+La licenza MIT permette:
+- ✅ Uso commerciale
+- ✅ Modifica del codice
+- ✅ Distribuzione
+- ✅ Uso privato
 
 ---
 
 ## Crediti
 
+**Sviluppatore Principale**: [michele1967lux](https://github.com/michele1967lux)
+
 Sviluppato utilizzando:
-- **Python**: Linguaggio di programmazione
-- **CustomTkinter**: Framework per l'interfaccia grafica
-- **subprocess**: Gestione processi
+- **Python**: Linguaggio di programmazione principale
+- **CustomTkinter**: Framework per l'interfaccia grafica moderna
+- **psutil**: Gestione processi e sistema
+- **subprocess**: Esecuzione processi
 - **threading**: Esecuzione asincrona
+
+### Ringraziamenti Speciali
+
+- **Community CustomTkinter** per l'eccellente framework UI
+- **Tutti i contributori** che migliorano il progetto
+- **Gli utenti** che forniscono feedback prezioso
 
 ---
 
-**Versione Manuale**: 1.0  
-**Data**: 2025-10-18  
-**Autore**: mk4-67
+## Changelog
+
+### Versione 1.2 (Ottobre 2025)
+- ✨ Documentazione bilingue completa (Italiano/Inglese)
+- ✨ Guida contributi (CONTRIBUTING.md)
+- ✨ README professionale con call-to-action
+- 📚 Manuale utente espanso con sezione Git
+- 🔧 Migliorata documentazione codice
+- 🌍 Struttura documentazione organizzata
+
+### Versione 1.1 (Ottobre 2025)
+- ✨ Integrazione Git completa con grafico visuale
+- ✨ Gestione processi localhost
+- ✨ Clonazione e rinominazione ambienti
+- 🔧 Editor requirements.txt integrato
+- 🔍 Test CUDA/PyTorch
+
+### Versione 1.0 (Ottobre 2025)
+- ✨ Release iniziale
+- 🚀 Gestione script Python
+- 🐍 Supporto ambienti Venv e Conda
+- 💾 Configurazione persistente
+- 🎨 Interfaccia CustomTkinter
+
+---
+
+<div align="center">
+
+**Versione Manuale**: 1.2  
+**Data Aggiornamento**: Ottobre 2025  
+**Autore**: [michele1967lux](https://github.com/michele1967lux)
+
+**Made with ❤️ for the Python community**
+
+[![GitHub Stars](https://img.shields.io/github/stars/michele1967lux/Universal_Starter_Gui?style=social)](https://github.com/michele1967lux/Universal_Starter_Gui/stargazers)
+
+**📚 Vedi anche**: [README.md](README.md) | [CONTRIBUTING.md](CONTRIBUTING.md)
+
+</div>

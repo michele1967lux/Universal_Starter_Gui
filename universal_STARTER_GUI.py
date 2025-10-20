@@ -917,13 +917,27 @@ class EnvManagerWindow(ctk.CTkToplevel):
 
 class GitManager:
     """
+    Manages all Git operations, separating logic from GUI.
+    
+    This class provides a clean interface for Git operations without
+    directly exposing shell commands to prevent security vulnerabilities.
+    
     Gestisce tutte le operazioni Git, separando la logica dalla GUI.
     """
     def __init__(self, repo_path: str):
+        """Initialize Git manager with repository path."""
         self.repo_path = repo_path
 
     def _run_git_command(self, command: List[str]) -> Tuple[int, str, str]:
-        """Esegue un comando git e restituisce (return_code, stdout, stderr)."""
+        """
+        Execute a git command and return (return_code, stdout, stderr).
+        
+        Args:
+            command: List of command arguments (without 'git' prefix)
+            
+        Returns:
+            Tuple of (return_code, stdout, stderr)
+        """
         try:
             process = subprocess.run(
                 ["git"] + command,
@@ -940,17 +954,32 @@ class GitManager:
             return -1, "", f"Errore imprevisto: {e}"
 
     def is_git_repo(self) -> bool:
-        """Verifica se il percorso è un repository Git valido."""
+        """
+        Check if the path is a valid Git repository.
+        
+        Returns:
+            True if valid Git repository, False otherwise
+        """
         return_code, _, _ = self._run_git_command(["rev-parse", "--is-inside-work-tree"])
         return return_code == 0
 
     def get_current_branch(self) -> Optional[str]:
-        """Restituisce il nome del branch corrente."""
+        """
+        Get the name of the current branch.
+        
+        Returns:
+            Branch name or "HEAD detached" if in detached state
+        """
         ret, out, err = self._run_git_command(["branch", "--show-current"])
         return out if ret == 0 and out else "HEAD detached"
 
     def get_status(self) -> List[Dict[str, str]]:
-        """Ottiene lo stato dei file (staged, unstaged, untracked)."""
+        """
+        Get file status (staged, unstaged, untracked).
+        
+        Returns:
+            List of dictionaries with file path and status information
+        """
         ret, out, err = self._run_git_command(["status", "--porcelain"])
         if ret != 0:
             return []
@@ -983,16 +1012,24 @@ class GitManager:
 
     def get_commit_graph_data(self, max_commits=50) -> Tuple[List[Dict], Dict]:
         """
-        Genera i dati per la visualizzazione del grafo dei commit.
-        Implementa un algoritmo di layout per posizionare i commit in colonne.
+        Generate data for commit graph visualization.
+        
+        Implements a layout algorithm to position commits in columns
+        for clear branch visualization.
+        
+        Args:
+            max_commits: Maximum number of commits to retrieve
+            
+        Returns:
+            Tuple of (commit_list, nodes_map) for graph rendering
         """
-        # 1. Ottieni i dati grezzi dal log di git
-        fmt = "%H|%P|%an|%s" # Hash|ParentHashes|Author|Subject
+        # 1. Get raw data from git log
+        fmt = "%H|%P|%an|%s"  # Hash|ParentHashes|Author|Subject
         ret, out, err = self._run_git_command(["log", "--all", f"--max-count={max_commits}", f"--pretty=format:{fmt}"])
         if ret != 0:
             return [], {}
 
-        # 2. Costruisci una mappa dei nodi e identifica i figli di ogni commit
+        # 2. Build node map and identify children of each commit
         nodes = {}
         all_children = {}
         lines = out.split('\n')
@@ -1011,15 +1048,16 @@ class GitManager:
             if h in all_children:
                 node['children'] = all_children[h]
 
-        # 3. Algoritmo di layout per assegnare le colonne (coordinate x)
+        # 3. Layout algorithm to assign columns (x coordinates)
         columns = {}
-        lane_allocator = [None] * 20  # Supporta fino a 20 branch paralleli
+        lane_allocator = [None] * 20  # Support up to 20 parallel branches
 
         def find_free_lane(start_y):
+            """Find first available lane for commit positioning."""
             for i, last_y in enumerate(lane_allocator):
                 if last_y is None or last_y > start_y:
                     return i
-            return len(lane_allocator) # Fallback
+            return len(lane_allocator)  # Fallback
 
         sorted_nodes = sorted(nodes.values(), key=lambda n: n['y'])
 
@@ -1027,15 +1065,15 @@ class GitManager:
             h = node['hash']
             y = node['y']
 
-            if h in columns: # Già processato come parente
+            if h in columns:  # Already processed as parent
                 continue
 
-            # Se un figlio ha già una colonna, prova a ereditarla
+            # If a child already has a column, try to inherit it
             parent_of_lane = None
             for child_hash in node.get('children', []):
                 if child_hash in columns:
                     child_col = columns[child_hash]
-                    # Se il figlio è il primo del suo branch, eredita la colonna
+                    # If child is first in its branch, inherit the column
                     if lane_allocator[child_col] == nodes[child_hash]['y']:
                         parent_of_lane = child_col
                         break
@@ -1048,56 +1086,75 @@ class GitManager:
             columns[h] = col
             lane_allocator[col] = y
 
-        # 4. Assegna le coordinate finali
+        # 4. Assign final coordinates
         commit_list = []
         for h, node in nodes.items():
-            node['x'] = columns.get(h, 0) * 40 + 30 # 40px per colonna, 30px di offset
-            node['y'] = node['y'] * 70 + 40 # 70px per riga, 40px di offset
+            node['x'] = columns.get(h, 0) * 40 + 30  # 40px per column, 30px offset
+            node['y'] = node['y'] * 70 + 40  # 70px per row, 40px offset
             commit_list.append(node)
 
         return commit_list, nodes
 
-    # Funzioni di azione (stage, commit, push, etc.)
+    # Git action functions (stage, commit, push, etc.)
     def stage(self, files: List[str]) -> Tuple[bool, str]:
+        """Stage files for commit."""
         ret, out, err = self._run_git_command(["add"] + files)
         return ret == 0, err
 
     def unstage(self, files: List[str]) -> Tuple[bool, str]:
+        """Unstage files from staging area."""
         ret, out, err = self._run_git_command(["reset", "HEAD", "--"] + files)
         return ret == 0, err
 
     def commit(self, message: str) -> Tuple[bool, str]:
+        """Create a commit with the given message."""
         ret, out, err = self._run_git_command(["commit", "-m", message])
         return ret == 0, out if ret == 0 else err
 
     def push(self) -> Tuple[bool, str]:
+        """Push commits to remote repository."""
         ret, out, err = self._run_git_command(["push"])
         return ret == 0, out if ret == 0 else err
 
     def checkout(self, target: str) -> Tuple[bool, str]:
+        """Checkout to a specific branch or commit."""
         ret, out, err = self._run_git_command(["checkout", target])
         return ret == 0, out if ret == 0 else err
 
     def create_branch(self, branch_name: str, from_commit: str) -> Tuple[bool, str]:
+        """Create a new branch from a specific commit."""
         ret, out, err = self._run_git_command(["branch", branch_name, from_commit])
         return ret == 0, out if ret == 0 else err
 
     def cherry_pick(self, commit_hash: str) -> Tuple[bool, str]:
+        """Apply changes from a specific commit to current branch."""
         ret, out, err = self._run_git_command(["cherry-pick", commit_hash])
         return ret == 0, out if ret == 0 else err
 
     def merge(self, branch_name: str) -> Tuple[bool, str]:
-        """Esegue il merge di un branch in quello corrente."""
+        """
+        Merge a branch into the current branch.
+        
+        Esegue il merge di un branch in quello corrente.
+        """
         ret, out, err = self._run_git_command(["merge", branch_name])
         return ret == 0, out if ret == 0 else err
 
     def revert_commit(self, commit_hash: str) -> Tuple[bool, str]:
-        """Esegue il revert di un commit specifico."""
+        """
+        Revert a specific commit.
+        
+        Esegue il revert di un commit specifico.
+        """
         ret, out, err = self._run_git_command(["revert", "--no-edit", commit_hash])
         return ret == 0, out if ret == 0 else err
 
     def resume_operation(self) -> Tuple[bool, str, str]:
-        """Tenta di riprendere un'operazione interrotta (merge/rebase)."""
+        """
+        Attempt to resume an interrupted operation (merge/rebase).
+        
+        Tenta di riprendere un'operazione interrotta (merge/rebase).
+        """
         if (Path(self.repo_path) / ".git" / "MERGE_HEAD").exists():
             cmd = ["merge", "--continue"]
             op = "Merge"
@@ -1105,15 +1162,17 @@ class GitManager:
             cmd = ["rebase", "--continue"]
             op = "Rebase"
         else:
-            return False, "Nessuna operazione da riprendere", ""
+            return False, "No operation to resume", ""
 
         ret, out, err = self._run_git_command(cmd)
         return ret == 0, out if ret == 0 else err, op
 
     def get_all_refresh_data(self, max_commits=50) -> Dict:
         """
-        Raccoglie tutti i dati necessari per un refresh della UI in un'unica operazione.
-        Questa funzione è pensata per essere eseguita in un thread separato.
+        Collect all data needed for UI refresh in a single operation.
+        
+        This function is designed to be executed in a separate thread.
+        Raccoglie tutti i dati necessari per un refresh della UI.
         """
         if not self.is_git_repo():
             return {"is_repo": False}
@@ -1131,29 +1190,58 @@ class GitManager:
         }
 
     def init(self) -> Tuple[bool, str]:
-        """Inizializza un nuovo repository Git nella cartella di lavoro."""
+        """
+        Initialize a new Git repository in the working directory.
+        
+        Inizializza un nuovo repository Git nella cartella di lavoro.
+        """
         ret, out, err = self._run_git_command(["init"])
         return ret == 0, out if ret == 0 else err
 
     def create_new_branch(self, branch_name: str) -> Tuple[bool, str]:
-        """Crea un nuovo branch dal punto corrente (HEAD)."""
+        """
+        Create a new branch from the current point (HEAD).
+        
+        Crea un nuovo branch dal punto corrente (HEAD).
+        """
         ret, out, err = self._run_git_command(["branch", branch_name])
         return ret == 0, out if ret == 0 else err
 
 
 class GitOperationManager:
-    """Gestisce operazioni Git asincrone per evitare blocco della GUI."""
+    """
+    Manages asynchronous Git operations to prevent GUI blocking.
+    
+    This class provides thread-safe execution of Git operations with
+    proper UI feedback and error handling.
+    
+    Gestisce operazioni Git asincrone per evitare blocco della GUI.
+    """
 
     def __init__(self, git_manager, ui_callback):
+        """
+        Initialize the operation manager.
+        
+        Args:
+            git_manager: GitManager instance for executing operations
+            ui_callback: UI object with callback methods for operation events
+        """
         self.git_manager = git_manager
         self.ui_callback = ui_callback
         self.active_operations = set()
         self.operation_queue = queue.Queue()
         self.cancel_requested = False
-        self.cancel_requested_for = None  # Traccia quale operazione è stata richiesta per cancellazione
+        self.cancel_requested_for = None  # Track which operation is being cancelled
 
     def execute_async(self, operation_name: str, operation_func, *args, **kwargs):
-        """Esegue un'operazione Git in un thread separato."""
+        """
+        Execute a Git operation in a separate thread.
+        
+        Args:
+            operation_name: Unique name for the operation
+            operation_func: Function to execute
+            *args, **kwargs: Arguments to pass to the function
+        """
         if operation_name in self.active_operations:
             # Operazione già in corso, ignora
             return
