@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add task-git.md \"universal_STARTER_GUI - Copia.py\" universal_STARTER_GUI-backup.py)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nRemove backup files and task documentation\n\n- Remove task-git.md (no longer needed)\n- Remove universal_STARTER_GUI - Copia.py (backup copy)\n- Remove universal_STARTER_GUI-backup.py (backup file)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git remote add origin https://github.com/michele1967lux/Universal_Starter_Gui.git)",
+      "Bash(git push -u origin implementations)",
+      "Bash(git checkout -b main)",
+      "Bash(git push -u origin main)",
+      "Bash(git pull origin main --allow-unrelated-histories)",
+      "Bash(git pull origin main)",
+      "Bash(git add .)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

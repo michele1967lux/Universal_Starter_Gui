@@ -1,6 +1,6 @@
 # Manuale d'Uso - Universal Starter GUI
 
-> **📚 Nota**: Per una panoramica generale e istruzioni di installazione in italiano e inglese, consulta il [README.md](README.md) principale.
+> **📚 Nota**: Per una panoramica generale e istruzioni di installazione in italiano e inglese, consulta il [README.md](../README.md) principale.
 
 > **💡 Suggerimento**: Se stai cercando una guida rapida, la sezione italiana nel README.md potrebbe essere sufficiente. Questo manuale fornisce istruzioni dettagliate e approfondite.
 
@@ -507,7 +507,7 @@ Al riavvio dell'applicazione, la configurazione viene caricata automaticamente d
 **R**: L'app è ottimizzata per Python, ma puoi aggiungere qualsiasi script eseguibile. Le funzionalità di ambiente sono specifiche per Python.
 
 ### D: Come contribuisco al progetto?
-**R**: Vedi [CONTRIBUTING.md](CONTRIBUTING.md) per linee guida dettagliate. Accogliamo contributi di codice, documentazione e traduzioni!
+**R**: Vedi [CONTRIBUTING.md](../CONTRIBUTING.md) per linee guida dettagliate. Accogliamo contributi di codice, documentazione e traduzioni!
 
 ---
 
@@ -532,7 +532,7 @@ Se trovi utile questo progetto, considera di:
 
 ## Licenza
 
-Questo progetto è distribuito sotto **licenza MIT**. Vedere il file [LICENSE](LICENSE) per i dettagli.
+Questo progetto è distribuito sotto **licenza MIT**. Vedere il file [LICENSE](../LICENSE) per i dettagli.
 
 La licenza MIT permette:
 - ✅ Uso commerciale
@@ -597,6 +597,6 @@ Sviluppato utilizzando:
 
 [![GitHub Stars](https://img.shields.io/github/stars/michele1967lux/Universal_Starter_Gui?style=social)](https://github.com/michele1967lux/Universal_Starter_Gui/stargazers)
 
-**📚 Vedi anche**: [README.md](README.md) | [CONTRIBUTING.md](CONTRIBUTING.md)
+**📚 Vedi anche**: [README.md](../README.md) | [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 </div>

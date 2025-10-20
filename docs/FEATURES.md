@@ -293,9 +293,9 @@ Check our [GitHub Issues](https://github.com/michele1967lux/Universal_Starter_Gu
 
 ## 📚 Additional Resources
 
-- **Main Documentation**: [README.md](README.md)
+- **Main Documentation**: [README.md](../README.md)
 - **Italian Manual**: [MANUALE_STARTER_GUI.md](MANUALE_STARTER_GUI.md)
-- **Contributing Guide**: [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Contributing Guide**: [CONTRIBUTING.md](../CONTRIBUTING.md)
 - **GitHub Repository**: [github.com/michele1967lux/Universal_Starter_Gui](https://github.com/michele1967lux/Universal_Starter_Gui)
 
 ---

@@ -4,7 +4,7 @@ This file provides a quick reference to all documentation available for Universa
 
 ## 📚 Main Documentation
 
-### [README.md](README.md) - **START HERE**
+### [README.md](../README.md) - **START HERE**
 **Bilingual (English & Italian)** | Comprehensive overview
 
 The main entry point for the project. Contains:
@@ -35,7 +35,7 @@ Complete Italian user manual with in-depth instructions:
 
 ---
 
-### [CONTRIBUTING.md](CONTRIBUTING.md)
+### [CONTRIBUTING.md](../CONTRIBUTING.md)
 **English** | Contribution guidelines
 
 Guide for contributors:
@@ -110,19 +110,19 @@ python test_starter.py
 ## 📖 Quick Navigation
 
 ### For New Users
-1. Read [README.md](README.md) (your language section)
+1. Read [README.md](../README.md) (your language section)
 2. Follow installation instructions
 3. Try the quick start guide
 4. Explore [MANUALE_STARTER_GUI.md](MANUALE_STARTER_GUI.md) (if Italian)
 
 ### For Developers
-1. Read [README.md](README.md) for overview
-2. Check [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+1. Read [README.md](../README.md) for overview
+2. Check [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines
 3. Review [FEATURES.md](FEATURES.md) for architecture
 4. Explore the code with improved docstrings
 
 ### For Contributors
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md) thoroughly
+1. Read [CONTRIBUTING.md](../CONTRIBUTING.md) thoroughly
 2. Set up development environment
 3. Check open issues on GitHub
 4. Follow the contribution workflow
@@ -133,10 +133,10 @@ python test_starter.py
 
 | Document | Language | Audience |
 |----------|----------|----------|
-| README.md | English & Italian | Everyone |
-| MANUALE_STARTER_GUI.md | Italian | End users |
-| CONTRIBUTING.md | English | Developers |
-| FEATURES.md | English | Technical users |
+| [README.md](../README.md) | English & Italian | Everyone |
+| [MANUALE_STARTER_GUI.md](MANUALE_STARTER_GUI.md) | Italian | End users |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | English | Developers |
+| [FEATURES.md](FEATURES.md) | English | Technical users |
 | Code docstrings | English (primary) + Italian (comments) | Developers |
 
 ---
@@ -146,13 +146,15 @@ python test_starter.py
 ```
 Universal_Starter_Gui/
 ├── README.md                    # Main documentation (bilingual)
-├── MANUALE_STARTER_GUI.md       # Italian user manual
 ├── CONTRIBUTING.md              # Contribution guidelines
-├── FEATURES.md                  # Features overview
-├── DOCUMENTATION_INDEX.md       # This file
 ├── LICENSE                      # MIT License
 ├── requirements_STARTER_GUI.txt # Dependencies
 ├── universal_STARTER_GUI.py     # Main application (well-documented)
+├── docs/                        # Documentation folder
+│   ├── MANUALE_STARTER_GUI.md   # Italian user manual
+│   ├── FEATURES.md              # Features overview
+│   ├── DOCUMENTATION_INDEX.md   # This file
+│   └── CHANGES_SUMMARY.md       # Changes summary
 └── examples/                    # Example scripts
     ├── example_simple.py
     ├── example_server.py
@@ -165,17 +167,17 @@ Universal_Starter_Gui/
 
 ### Common Questions
 
-**"How do I install?"** → [README.md](README.md) § Installation
+**"How do I install?"** → [README.md](../README.md) § Installation
 
 **"How do I use Git features?"** → [MANUALE_STARTER_GUI.md](MANUALE_STARTER_GUI.md) § Integrazione Git
 
-**"How do I contribute?"** → [CONTRIBUTING.md](CONTRIBUTING.md)
+**"How do I contribute?"** → [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 **"What are the features?"** → [FEATURES.md](FEATURES.md)
 
 **"How does it work internally?"** → [FEATURES.md](FEATURES.md) § Technical Architecture
 
-**"I found a bug!"** → GitHub Issues + [CONTRIBUTING.md](CONTRIBUTING.md)
+**"I found a bug!"** → GitHub Issues + [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ---
 
@@ -190,7 +192,7 @@ We welcome documentation contributions!
 - 📖 Expanding examples
 - ❓ Adding FAQ entries
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how to submit improvements.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for how to submit improvements.
 
 ---
 

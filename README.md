@@ -410,7 +410,7 @@ Tab **"Git Status"** → Visualizza commit → Click per azioni → Stage/Commit
 
 <div align="center">
 
-**📚 Documentazione completa: [MANUALE_STARTER_GUI.md](MANUALE_STARTER_GUI.md)**
+**📚 Documentazione completa: [MANUALE_STARTER_GUI.md](docs/MANUALE_STARTER_GUI.md)**
 
 **Made with ❤️ by [michele1967lux](https://github.com/michele1967lux)**
 
