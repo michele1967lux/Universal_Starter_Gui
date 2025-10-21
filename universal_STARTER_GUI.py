@@ -437,6 +437,17 @@ class EnvManagerWindow(ctk.CTkToplevel):
         create_btn = ctk.CTkButton(input_frame, text="Crea", command=self.create_venv)
         create_btn.pack(side="left", padx=5)
         
+        # Progress bar for environment creation
+        self.venv_progress_frame = ctk.CTkFrame(tab)
+        self.venv_progress_frame.pack(pady=5, padx=10, fill="x")
+        
+        self.venv_progress_label = ctk.CTkLabel(self.venv_progress_frame, text="")
+        self.venv_progress_label.pack(side="left", padx=5)
+        
+        self.venv_progress_bar = ctk.CTkProgressBar(self.venv_progress_frame, width=300)
+        self.venv_progress_bar.pack(side="left", padx=5)
+        self.venv_progress_bar.set(0)
+        
         # Output console
         console_label = ctk.CTkLabel(tab, text="Console Output:", font=("Arial", 12, "bold"))
         console_label.pack(pady=(10, 5), padx=10, anchor="w")
@@ -481,6 +492,17 @@ class EnvManagerWindow(ctk.CTkToplevel):
         
         create_btn = ctk.CTkButton(input_frame, text="Crea", command=self.create_conda)
         create_btn.pack(side="left", padx=5)
+        
+        # Progress bar for environment creation
+        self.conda_progress_frame = ctk.CTkFrame(tab)
+        self.conda_progress_frame.pack(pady=5, padx=10, fill="x")
+        
+        self.conda_progress_label = ctk.CTkLabel(self.conda_progress_frame, text="")
+        self.conda_progress_label.pack(side="left", padx=5)
+        
+        self.conda_progress_bar = ctk.CTkProgressBar(self.conda_progress_frame, width=300)
+        self.conda_progress_bar.pack(side="left", padx=5)
+        self.conda_progress_bar.set(0)
         
         # Output console
         console_label = ctk.CTkLabel(tab, text="Console Output:", font=("Arial", 12, "bold"))
@@ -646,6 +668,10 @@ class EnvManagerWindow(ctk.CTkToplevel):
         # Create .venvs directory if it doesn't exist
         Path(".venvs").mkdir(exist_ok=True)
         
+        # Update UI to show progress
+        self.venv_progress_label.configure(text=f"Creazione '{name}' in corso...")
+        self.venv_progress_bar.set(0.3)
+        
         self.log_to_venv_console(f"Creazione ambiente Venv '{name}' in corso...\n")
         
         # Create environment in a separate thread
@@ -655,7 +681,15 @@ class EnvManagerWindow(ctk.CTkToplevel):
         thread.start()
         
         # Monitor the queue for output
-        self.monitor_queue(q, self.venv_console, lambda: self.refresh_venv_list())
+        self.monitor_queue(q, self.venv_console, lambda: self._on_venv_creation_complete(name))
+    
+    def _on_venv_creation_complete(self, name: str):
+        """Called when venv creation completes."""
+        self.venv_progress_bar.set(1.0)
+        self.venv_progress_label.configure(text=f"✓ Ambiente '{name}' creato!")
+        self.refresh_venv_list()
+        # Reset progress after 3 seconds
+        self.after(3000, lambda: self._reset_venv_progress())
     
     def _create_venv_worker(self, name: str, path: str, q: queue.Queue):
         """Worker thread to create venv environment."""
@@ -676,10 +710,13 @@ class EnvManagerWindow(ctk.CTkToplevel):
             
             if process.returncode == 0:
                 q.put(f"✓ Ambiente '{name}' creato con successo!\n")
+                q.put("PROGRESS:100")  # Signal 100% progress
             else:
                 q.put(f"✗ Errore durante la creazione dell'ambiente (codice: {process.returncode})\n")
+                q.put("PROGRESS:0")  # Signal error
         except Exception as e:
             q.put(f"✗ Errore: {str(e)}\n")
+            q.put("PROGRESS:0")
         finally:
             q.put(None)  # Signal completion
     
@@ -692,6 +729,10 @@ class EnvManagerWindow(ctk.CTkToplevel):
         
         python_ver = self.python_version.get()
         
+        # Update UI to show progress
+        self.conda_progress_label.configure(text=f"Creazione '{name}' in corso...")
+        self.conda_progress_bar.set(0.3)
+        
         self.log_to_conda_console(f"Creazione ambiente Conda '{name}' con Python {python_ver}...\n")
         
         # Create environment in a separate thread
@@ -701,7 +742,15 @@ class EnvManagerWindow(ctk.CTkToplevel):
         thread.start()
         
         # Monitor the queue for output
-        self.monitor_queue(q, self.conda_console, lambda: self.refresh_conda_list())
+        self.monitor_queue(q, self.conda_console, lambda: self._on_conda_creation_complete(name))
+    
+    def _on_conda_creation_complete(self, name: str):
+        """Called when conda creation completes."""
+        self.conda_progress_bar.set(1.0)
+        self.conda_progress_label.configure(text=f"✓ Ambiente '{name}' creato!")
+        self.refresh_conda_list()
+        # Reset progress after 3 seconds
+        self.after(3000, lambda: self._reset_conda_progress())
     
     def _create_conda_worker(self, name: str, python_ver: str, q: queue.Queue):
         """Worker thread to create conda environment."""
@@ -714,20 +763,30 @@ class EnvManagerWindow(ctk.CTkToplevel):
                 bufsize=1
             )
             
-            # Read output line by line
+            # Read output line by line and update progress
+            line_count = 0
             for line in process.stdout:
                 q.put(line)
+                line_count += 1
+                # Update progress based on output (rough estimate)
+                if line_count % 5 == 0:
+                    progress = min(0.3 + (line_count / 100) * 0.6, 0.9)
+                    q.put(f"PROGRESS:{int(progress * 100)}")
             
             process.wait()
             
             if process.returncode == 0:
                 q.put(f"✓ Ambiente '{name}' creato con successo!\n")
+                q.put("PROGRESS:100")
             else:
                 q.put(f"✗ Errore durante la creazione dell'ambiente (codice: {process.returncode})\n")
+                q.put("PROGRESS:0")
         except FileNotFoundError:
             q.put("✗ Errore: conda non trovato. Assicurarsi che Conda sia installato.\n")
+            q.put("PROGRESS:0")
         except Exception as e:
             q.put(f"✗ Errore: {str(e)}\n")
+            q.put("PROGRESS:0")
         finally:
             q.put(None)  # Signal completion
     
@@ -885,7 +944,16 @@ class EnvManagerWindow(ctk.CTkToplevel):
                     if completion_callback:
                         completion_callback()
                     break
-                self.log_to_console(console, line)
+                # Handle progress updates
+                if line.startswith("PROGRESS:"):
+                    progress_val = int(line.split(":")[1])
+                    # Update appropriate progress bar based on console
+                    if console == self.venv_console:
+                        self.venv_progress_bar.set(progress_val / 100.0)
+                    elif console == self.conda_console:
+                        self.conda_progress_bar.set(progress_val / 100.0)
+                else:
+                    self.log_to_console(console, line)
         except queue.Empty:
             # Schedule next check
             self.after(100, lambda: self.monitor_queue(q, console, completion_callback))
@@ -908,6 +976,16 @@ class EnvManagerWindow(ctk.CTkToplevel):
     def log_main_console(self, message: str):
         """Log a message to the main log console."""
         log_queue.put(message)
+
+    def _reset_venv_progress(self):
+        """Reset venv progress bar and label."""
+        self.venv_progress_bar.set(0)
+        self.venv_progress_label.configure(text="")
+
+    def _reset_conda_progress(self):
+        """Reset conda progress bar and label."""
+        self.conda_progress_bar.set(0)
+        self.conda_progress_label.configure(text="")
 
     def select_environment(self, env_type: str, name: str, path: str = None):
         """Select an environment and close the window."""
@@ -1207,6 +1285,116 @@ class GitManager:
         ret, out, err = self._run_git_command(["branch", branch_name])
         return ret == 0, out if ret == 0 else err
 
+    def pull(self) -> Tuple[bool, str]:
+        """
+        Pull changes from remote repository (fetch + merge).
+        
+        Scarica e unisce le modifiche dal repository remoto.
+        """
+        ret, out, err = self._run_git_command(["pull"])
+        return ret == 0, out if ret == 0 else err
+
+    def fetch(self) -> Tuple[bool, str]:
+        """
+        Fetch changes from remote repository without merging.
+        
+        Scarica le modifiche dal repository remoto senza unirle.
+        """
+        ret, out, err = self._run_git_command(["fetch"])
+        return ret == 0, out if ret == 0 else err
+
+    def stash(self) -> Tuple[bool, str]:
+        """
+        Stash uncommitted changes.
+        
+        Salva temporaneamente le modifiche non committed.
+        """
+        ret, out, err = self._run_git_command(["stash"])
+        return ret == 0, out if ret == 0 else err
+
+    def stash_pop(self) -> Tuple[bool, str]:
+        """
+        Apply and remove the most recent stash.
+        
+        Applica e rimuove l'ultimo stash salvato.
+        """
+        ret, out, err = self._run_git_command(["stash", "pop"])
+        return ret == 0, out if ret == 0 else err
+
+    def stash_list(self) -> Tuple[bool, List[str]]:
+        """
+        List all stashes.
+        
+        Elenca tutti gli stash salvati.
+        """
+        ret, out, err = self._run_git_command(["stash", "list"])
+        if ret == 0:
+            stashes = out.split('\n') if out else []
+            return True, stashes
+        return False, []
+
+    def get_branches(self) -> Tuple[bool, List[str]]:
+        """
+        Get list of all branches.
+        
+        Ottiene la lista di tutti i branch.
+        """
+        ret, out, err = self._run_git_command(["branch", "-a"])
+        if ret == 0:
+            branches = [line.strip().replace('* ', '') for line in out.split('\n') if line.strip()]
+            return True, branches
+        return False, []
+
+    def get_remotes(self) -> Tuple[bool, List[str]]:
+        """
+        Get list of all remote repositories.
+        
+        Ottiene la lista di tutti i repository remoti.
+        """
+        ret, out, err = self._run_git_command(["remote", "-v"])
+        if ret == 0:
+            remotes = out.split('\n') if out else []
+            return True, remotes
+        return False, []
+
+    def add_remote(self, name: str, url: str) -> Tuple[bool, str]:
+        """
+        Add a remote repository.
+        
+        Aggiunge un repository remoto.
+        """
+        ret, out, err = self._run_git_command(["remote", "add", name, url])
+        return ret == 0, out if ret == 0 else err
+
+    def remove_remote(self, name: str) -> Tuple[bool, str]:
+        """
+        Remove a remote repository.
+        
+        Rimuove un repository remoto.
+        """
+        ret, out, err = self._run_git_command(["remote", "remove", name])
+        return ret == 0, out if ret == 0 else err
+
+    def get_file_diff(self, file_path: str) -> Tuple[bool, str]:
+        """
+        Get diff for a specific file.
+        
+        Ottiene le differenze per un file specifico.
+        """
+        ret, out, err = self._run_git_command(["diff", file_path])
+        return ret == 0, out if ret == 0 else err
+
+    def reset_hard(self, target: str = "HEAD") -> Tuple[bool, str]:
+        """
+        Hard reset to a specific commit or HEAD.
+        WARNING: This discards all uncommitted changes!
+        
+        Reset hard a un commit specifico o HEAD.
+        ATTENZIONE: Questa operazione scarta tutte le modifiche non committed!
+        """
+        ret, out, err = self._run_git_command(["reset", "--hard", target])
+        return ret == 0, out if ret == 0 else err
+
 
 class GitOperationManager:
     """
@@ -1471,20 +1659,30 @@ class App(ctk.CTk):
         self.git_graph_canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
         self.git_graph_canvas.pack(side="left", fill="both", expand=True)
 
-        # Pulsanti azioni git
+        # Pulsanti azioni git - Row 1
         self.git_actions_frame = ctk.CTkFrame(git_tab)
         self.commit_btn = ctk.CTkButton(self.git_actions_frame, text="Commit", command=self.git_commit, state="disabled")
         self.commit_btn.pack(side="left", padx=5)
         self.push_btn = ctk.CTkButton(self.git_actions_frame, text="Push", command=self.git_push, state="disabled")
         self.push_btn.pack(side="left", padx=5)
+        self.pull_btn = ctk.CTkButton(self.git_actions_frame, text="Pull", command=self.git_pull, state="disabled")
+        self.pull_btn.pack(side="left", padx=5)
+        self.fetch_btn = ctk.CTkButton(self.git_actions_frame, text="Fetch", command=self.git_fetch, state="disabled")
+        self.fetch_btn.pack(side="left", padx=5)
         self.merge_btn = ctk.CTkButton(self.git_actions_frame, text="Merge", command=self.git_merge, state="disabled")
         self.merge_btn.pack(side="left", padx=5)
-        # NUOVO: Pulsante Crea Branch
-        self.create_branch_btn = ctk.CTkButton(self.git_actions_frame, text="Crea Branch", command=self.git_create_branch, state="disabled")
+        
+        # Pulsanti azioni git - Row 2
+        self.git_actions_frame2 = ctk.CTkFrame(git_tab)
+        self.create_branch_btn = ctk.CTkButton(self.git_actions_frame2, text="Crea Branch", command=self.git_create_branch, state="disabled")
         self.create_branch_btn.pack(side="left", padx=5)
-        self.revert_btn = ctk.CTkButton(self.git_actions_frame, text="Revert", command=self.git_revert, state="disabled")
+        self.stash_btn = ctk.CTkButton(self.git_actions_frame2, text="Stash", command=self.git_stash, state="disabled")
+        self.stash_btn.pack(side="left", padx=5)
+        self.stash_pop_btn = ctk.CTkButton(self.git_actions_frame2, text="Stash Pop", command=self.git_stash_pop, state="disabled")
+        self.stash_pop_btn.pack(side="left", padx=5)
+        self.revert_btn = ctk.CTkButton(self.git_actions_frame2, text="Revert", command=self.git_revert, state="disabled")
         self.revert_btn.pack(side="left", padx=5)
-        self.resume_btn = ctk.CTkButton(self.git_actions_frame, text="Resume", command=self.git_resume, state="disabled")
+        self.resume_btn = ctk.CTkButton(self.git_actions_frame2, text="Resume", command=self.git_resume, state="disabled")
         self.resume_btn.pack(side="left", padx=5)
 
         # Indicatori di progresso e stato per operazioni Git
@@ -1504,8 +1702,12 @@ class App(ctk.CTk):
         # Aggiungi tooltip
         self.create_tooltip(self.commit_btn, "Crea un nuovo commit con i file attualmente staged.")
         self.create_tooltip(self.push_btn, "Invia i commit locali al repository remoto.")
+        self.create_tooltip(self.pull_btn, "Scarica e unisce le modifiche dal repository remoto.")
+        self.create_tooltip(self.fetch_btn, "Scarica le modifiche dal repository remoto senza unirle.")
         self.create_tooltip(self.merge_btn, "Unisci un branch selezionato nel branch corrente.")
         self.create_tooltip(self.create_branch_btn, "Crea un nuovo branch dal punto corrente (HEAD).")
+        self.create_tooltip(self.stash_btn, "Salva temporaneamente le modifiche non committed.")
+        self.create_tooltip(self.stash_pop_btn, "Applica e rimuove l'ultimo stash salvato.")
         self.create_tooltip(self.revert_btn, "Annulla le modifiche di un commit specifico.")
         self.create_tooltip(self.resume_btn, "Riprendi un'operazione interrotta (merge/rebase).")
         self.create_tooltip(self.stage_selected_btn, "Aggiungi i file selezionati all'area di staging.")
@@ -1569,6 +1771,111 @@ Mostra i file che sono stati modificati, aggiunti o eliminati.
 Azioni Git:
 • Commit: Crea un nuovo salvataggio (commit) con i file che hai messo in "stage". Ti chiederà un messaggio di commit.
 • Push: Invia i tuoi commit locali al repository remoto (es. GitHub).
+• Pull: Scarica e unisce le modifiche dal repository remoto nel tuo branch corrente.
+• Fetch: Scarica le modifiche dal repository remoto senza unirle automaticamente.
+• Merge: Unisce un altro branch nel tuo branch corrente.
+• Crea Branch: Crea un nuovo branch dal punto corrente (HEAD).
+• Stash: Salva temporaneamente le modifiche non committed (utile per cambiare branch).
+• Stash Pop: Ripristina le modifiche salvate con Stash.
+• Revert: Annulla le modifiche di un commit specifico creando un nuovo commit inverso.
+• Resume: Riprende un'operazione interrotta (come un merge con conflitti).
+
+--- Guida Completa Git ---
+
+CONCETTI BASE:
+• Repository: Una cartella tracciata da Git che contiene la storia delle modifiche.
+• Commit: Un salvataggio (snapshot) del tuo codice in un momento specifico.
+• Branch: Una linea di sviluppo indipendente. Puoi lavorare su più branch contemporaneamente.
+• Remote: Un repository remoto (es. su GitHub) dove condividi il codice con altri.
+• Stage/Staging Area: L'area dove prepari i file prima di creare un commit.
+
+WORKFLOW TIPICO:
+1. Modifica i file nel tuo progetto
+2. Seleziona i file modificati e clicca "Stage Selezionati"
+3. Clicca "Commit" e inserisci un messaggio descrittivo
+4. Clicca "Push" per inviare le modifiche al repository remoto
+
+OPERAZIONI COMUNI:
+
+Inizializzare un repository:
+Se la cartella non è ancora un repository Git, apparirà un pulsante "Inizializza Repository Qui".
+Cliccalo per creare un nuovo repository Git nella cartella corrente.
+
+Creare un nuovo branch:
+1. Clicca "Crea Branch"
+2. Inserisci il nome del nuovo branch (es. "feature-nuova-funzionalita")
+3. Il branch sarà creato dal punto corrente (HEAD)
+Per creare un branch da un commit specifico, clicca sul commit nel grafico e seleziona "Crea branch da..."
+
+Cambiare branch:
+Clicca su un commit nel grafico del branch desiderato e seleziona "Checkout".
+Attenzione: assicurati di non avere modifiche non salvate, altrimenti usa "Stash" prima.
+
+Unire branch (Merge):
+1. Passa al branch di destinazione (es. main) con Checkout
+2. Clicca "Merge"
+3. Inserisci il nome del branch da unire (es. feature-branch)
+Se ci sono conflitti, dovrai risolverli manualmente e poi cliccare "Resume".
+
+Salvare modifiche temporaneamente (Stash):
+Quando devi cambiare branch ma hai modifiche non salvate:
+1. Clicca "Stash" per salvare le modifiche temporaneamente
+2. Cambia branch e lavora
+3. Torna al branch originale
+4. Clicca "Stash Pop" per ripristinare le modifiche
+
+Annullare un commit (Revert):
+Se hai fatto un commit con errori:
+1. Clicca "Revert"
+2. Inserisci l'hash del commit da annullare (copialo dal grafico)
+Questo crea un NUOVO commit che annulla le modifiche, mantenendo la storia intatta.
+
+Cherry-pick (Applicare un singolo commit):
+Per applicare le modifiche di un commit specifico sul tuo branch:
+1. Clicca sul commit nel grafico
+2. Seleziona "Cherry-pick"
+Utile per portare una correzione da un branch all'altro senza fare merge completo.
+
+Pull vs Fetch:
+• Pull: Scarica E unisce automaticamente le modifiche dal remoto
+• Fetch: Solo scarica le modifiche, senza unirle (più sicuro per vedere cosa c'è di nuovo)
+
+BEST PRACTICES:
+• Scrivi messaggi di commit chiari e descrittivi
+• Fai commit piccoli e frequenti piuttosto che grandi e rari
+• Crea un branch per ogni nuova funzionalità o correzione
+• Usa "Pull" spesso per rimanere aggiornato con il team
+• Prima di fare Push, verifica che tutto funzioni correttamente
+• Non fare commit di file sensibili (password, chiavi API)
+
+RISOLUZIONE PROBLEMI:
+
+Merge con conflitti:
+Se dopo un Merge o Pull appaiono conflitti:
+1. Git ti segnalerà quali file hanno conflitti
+2. Apri i file e cerca i marcatori <<<<<<, ======, >>>>>>
+3. Modifica i file per risolvere i conflitti
+4. Stage i file risolti
+5. Clicca "Resume" per completare il merge
+
+Operazione bloccata:
+Se un'operazione non termina o hai problemi:
+1. Clicca "Annulla" (se disponibile)
+2. Usa "Resume" se un'operazione era stata interrotta
+3. Verifica lo stato nella console di log
+
+Tornare a una versione precedente:
+• Per vedere un commit precedente: Clicca sul commit e "Checkout"
+• Per annullare modifiche: Usa "Revert"
+• Per riportare tutto a uno stato precedente: Usa operazioni avanzate da linea di comando
+
+RIFERIMENTI RAPIDI:
+• Verde (●): Commit normale
+• Linee colorate: Connessioni tra commit (branch diversi = colori diversi)
+• "HEAD detached": Sei su un commit specifico, non su un branch
+• "Staged": File pronti per il commit
+• "Unstaged": File modificati ma non ancora pronti per il commit
+• "Untracked": File nuovi che Git non sta ancora tracciando
 """
 
         help_label = ctk.CTkLabel(help_frame, text=help_text, justify="left", anchor="w")
@@ -2429,6 +2736,22 @@ except Exception as e:
 
         self.git_op_manager.execute_async("cherry_pick", self.git_manager.cherry_pick, commit_hash)
 
+    def git_pull(self):
+        """Pull changes from remote repository asynchronously."""
+        self.git_op_manager.execute_async("pull", self.git_manager.pull)
+
+    def git_fetch(self):
+        """Fetch changes from remote repository asynchronously."""
+        self.git_op_manager.execute_async("fetch", self.git_manager.fetch)
+
+    def git_stash(self):
+        """Stash uncommitted changes asynchronously."""
+        self.git_op_manager.execute_async("stash", self.git_manager.stash)
+
+    def git_stash_pop(self):
+        """Apply and remove the most recent stash asynchronously."""
+        self.git_op_manager.execute_async("stash_pop", self.git_manager.stash_pop)
+
     # Assicurati di avere anche una funzione per la clipboard
     def copy_to_clipboard(self, text: str):
         """Pulisce la clipboard e copia il nuovo testo."""
@@ -2530,8 +2853,9 @@ except Exception as e:
     def _set_git_buttons_state(self, state: str):
         """Imposta lo stato di tutti i pulsanti Git."""
         buttons = [
-            self.commit_btn, self.push_btn, self.merge_btn, self.revert_btn, self.resume_btn,
-            self.stage_selected_btn, self.unstage_selected_btn
+            self.commit_btn, self.push_btn, self.pull_btn, self.fetch_btn, self.merge_btn, 
+            self.create_branch_btn, self.stash_btn, self.stash_pop_btn, self.revert_btn, 
+            self.resume_btn, self.stage_selected_btn, self.unstage_selected_btn
         ]
         for btn in buttons:
             btn.configure(state=state)
