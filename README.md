@@ -39,6 +39,9 @@
 - 🔀 **Merge, cherry-pick, and revert** operations
 - 🌿 **Branch creation and checkout** from any commit
 - ⚙️ **Asynchronous operations** with progress indicators
+- 📥 **Pull and Fetch** - sync with remote repositories
+- 💾 **Stash support** - temporarily save uncommitted changes
+- 📖 **Comprehensive help** - complete Git guide in Help tab
 
 #### User Experience
 - 🎨 **Modern dark-themed GUI** using CustomTkinter
@@ -108,7 +111,14 @@ python universal_STARTER_GUI.py
 - View commit history in the visual graph
 - Click commits to checkout, create branches, or cherry-pick
 - Stage/unstage files using checkboxes
-- Commit, push, merge with intuitive buttons
+- Use buttons for common operations:
+  - **Commit**: Save staged changes
+  - **Push**: Upload commits to remote
+  - **Pull**: Download and merge remote changes
+  - **Fetch**: Download remote changes without merging
+  - **Stash**: Temporarily save uncommitted work
+  - **Merge**: Combine branches
+- Access comprehensive Git help in the Help tab
 
 #### 4. Dependency Management
 - Click **"Installa Dipendenze"** to install from requirements.txt
@@ -168,6 +178,8 @@ The integrated Git client provides:
 - **Asynchronous Operations**: All Git operations run in background threads to prevent UI freezing
 - **Context Menus**: Right-click commits for quick actions (checkout, branch creation, cherry-pick)
 - **Progress Tracking**: Visual feedback for long-running operations with cancellation support
+- **Complete Operations**: Pull, fetch, push, merge, stash, revert, cherry-pick, and more
+- **Comprehensive Help**: Built-in documentation covers all Git workflows and troubleshooting
 
 #### Environment Management Details
 - **Venv Operations**: Create, clone, rename, and delete Python venv environments
@@ -175,6 +187,8 @@ The integrated Git client provides:
 - **Auto-detection**: Automatically finds existing environments in standard locations
 - **Validation**: Checks environment integrity before selection
 - **Console Output**: Real-time feedback during environment operations
+- **Progress Bars**: Visual indicators show creation progress with status labels
+- **Error Handling**: Clear feedback for operation failures with troubleshooting hints
 
 #### Process Management
 - **Service Detection**: Automatically identifies application services vs system processes
@@ -320,6 +334,9 @@ If this project has been helpful to you, please consider:
 - 🔀 **Operazioni merge, cherry-pick e revert**
 - 🌿 **Creazione branch e checkout** da qualsiasi commit
 - ⚙️ **Operazioni asincrone** con indicatori di progresso
+- 📥 **Pull e Fetch** - sincronizza con repository remoti
+- 💾 **Supporto Stash** - salva temporaneamente modifiche non committed
+- 📖 **Guida completa** - documentazione Git completa nella sezione Help
 
 ### 📋 Requisiti
 
@@ -416,6 +433,13 @@ Tab **"Git Status"** → Visualizza commit → Click per azioni → Stage/Commit
 
 [![Stars](https://img.shields.io/github/stars/michele1967lux/Universal_Starter_Gui?style=social)](https://github.com/michele1967lux/Universal_Starter_Gui/stargazers)
 
-**Version 1.2** | October 2025
+**Version 1.3** | October 2025
+
+### 🆕 What's New in v1.3
+- ✨ **Enhanced Git Operations**: Pull, Fetch, Stash/Stash Pop support
+- 📊 **Progress Bars**: Real-time feedback for environment creation
+- 📖 **Comprehensive Git Guide**: Complete help documentation in the Help tab
+- 🧪 **Improved Testing**: 9 passing tests for Git and environment operations
+- 🎨 **Better UX**: Visual progress indicators and status labels
 
 </div>

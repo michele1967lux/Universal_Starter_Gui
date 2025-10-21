@@ -15,8 +15,10 @@ The application uses a modern tabbed interface with three main sections:
 #### 2. Git Status Tab - Integrated Git Client
 - **Visual Commit Graph**: Interactive tree view of repository history
 - **File Status**: See staged, unstaged, and untracked files
-- **Git Operations**: Commit, push, merge, revert with one click
+- **Git Operations**: Commit, push, pull, fetch, merge, revert with one click
 - **Branch Management**: Create, checkout, and manage branches visually
+- **Stash Support**: Save and restore uncommitted changes
+- **Progress Indicators**: Real-time feedback for all Git operations
 
 #### 3. Help Tab - Built-in Documentation
 - **Usage Guide**: Contextual help for all features
@@ -228,12 +230,16 @@ All long-running operations are executed asynchronously:
 - Create, Select, Rename, Clone, Delete
 - Auto-detection of existing environments
 - Validation of environment integrity
+- **Real-time progress bars during creation**
+- **Status feedback with visual indicators**
 
 **Conda Operations**:
 - Create with Python version selection
 - Clone existing environments
 - List all available environments
 - Full environment lifecycle management
+- **Dynamic progress tracking during operations**
+- **Detailed console output for troubleshooting**
 
 ### Git Integration
 
@@ -247,6 +253,22 @@ All long-running operations are executed asynchronously:
 - Batch staging/unstaging
 - Status visualization (M/A/D/??)
 - Checkbox selection interface
+
+**Advanced Git Operations** (NEW):
+- **Pull**: Fetch and merge changes from remote
+- **Fetch**: Download changes without auto-merge
+- **Stash**: Temporarily save uncommitted changes
+- **Stash Pop**: Restore previously stashed changes
+- **Branch Management**: List, create, and switch branches
+- **Remote Operations**: Manage remote repositories
+- **Cherry-pick**: Apply specific commits to current branch
+- **Revert**: Undo specific commits safely
+
+**Comprehensive Help Documentation**:
+- Complete Git workflow guide
+- Operation descriptions and best practices
+- Troubleshooting for common issues
+- Quick reference for all Git commands
 
 ---
 
@@ -279,7 +301,8 @@ Documentation is available in both languages:
 - [ ] Docker container management
 - [ ] Remote execution support
 - [ ] Script scheduling
-- [ ] Enhanced Git operations (pull, fetch, stash)
+- [x] Enhanced Git operations (pull, fetch, stash) - **COMPLETED**
+- [x] Progress bars for long operations - **COMPLETED**
 - [ ] Multi-language UI support
 - [ ] Theme customization
 - [ ] Script templates
